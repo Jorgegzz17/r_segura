@@ -5,7 +5,7 @@ require_once __DIR__ . '/../config/admin_auth.php';
 
 startAdminSession();
 if (!isAdminAuthenticated()) {
-    header('Location: login.php');
+    header('Location: ../index.php');
     exit;
 }
 

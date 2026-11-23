@@ -8,7 +8,7 @@ Aplicación web responsiva para consultar el mapa, publicar reportes con ubicaci
 index.php                 Página pública y mapa
 api/reports.php           API JSON para reportes
 api/locations.php         API de lectura y administración de ubicaciones
-admin/login.php           Acceso administrativo
+admin/login.php           Redirige al acceso compartido
 admin/index.php           Moderación (requiere iniciar sesión)
 admin/locations.php       Edición del plantel y puntos seguros
 config/database.php       Conexión PDO
@@ -32,7 +32,7 @@ database.sql              Esquema sin reportes de ejemplo
    ```
 
 5. Verifica las credenciales de MySQL en `config/database.php`. El valor `root` sin contraseña es solo el predeterminado de XAMPP local; configura credenciales propias fuera de desarrollo.
-6. Abre `http://localhost/RUTA-SEGURA/`. Inicia sesión con tu nombre de usuario para acceder al mapa y publicar reportes. Los administradores pueden ingresar desde ese mismo formulario con el correo usado al crear su cuenta y serán dirigidos al panel de administración.
+6. Abre `http://localhost/RUTA-SEGURA/`. Alumnos y administradores usan el mismo formulario de inicio de sesión. El alumno ingresa su nombre de usuario; el administrador, el correo usado al crear su cuenta. Al autenticarlo, será dirigido al panel administrativo.
 7. Crea la cuenta administrativa desde PowerShell o CMD:
 
    ```powershell
