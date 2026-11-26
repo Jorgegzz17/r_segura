@@ -1,6 +1,20 @@
 <?php
 declare(strict_types=1);
 
+const DEFAULT_ADMIN_USERNAME = 'rutas.seguras@cbtis258.edu.mx';
+const DEFAULT_ADMIN_PASSWORD_HASH = '$2y$10$RWdYbh6TO7KDdUhU9fTuaum3Q.SxjYqoxJf1lEM1fm0rEBXf5.Oli';
+
+function ensureDefaultAdminAccount(): void
+{
+    $stmt = getDB()->prepare(
+        'INSERT IGNORE INTO admin_users (username, password_hash) VALUES (:username, :password_hash)'
+    );
+    $stmt->execute([
+        ':username' => DEFAULT_ADMIN_USERNAME,
+        ':password_hash' => DEFAULT_ADMIN_PASSWORD_HASH,
+    ]);
+}
+
 function startAdminSession(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {

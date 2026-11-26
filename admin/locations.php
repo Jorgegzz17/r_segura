@@ -24,8 +24,16 @@ $csrf = createAdminCsrfToken();
     <link rel="stylesheet" href="../assets/css/brand-theme.css?v=<?= filemtime(__DIR__ . '/../assets/css/brand-theme.css') ?>">
     <style>
         body { font-family: Inter, sans-serif; }
-        #locations-map { height: min(68vh, 620px); min-height: 380px; }
+        #locations-map {
+            height: min(68vh, 620px);
+            min-height: 380px;
+            background: #e9e5df;
+            box-shadow: inset 0 0 0 1px rgba(107, 20, 38, .08);
+        }
         .location-marker { background: transparent; border: 0; }
+        @media (max-width: 640px) {
+            #locations-map { height: min(58vh, 480px); min-height: 300px; }
+        }
     </style>
 </head>
 <body class="brand-page brand-admin-page min-h-screen bg-slate-100 text-slate-800">
@@ -67,6 +75,13 @@ $csrf = createAdminCsrfToken();
                         <label class="block text-xs font-semibold text-slate-600">Descripción
                             <textarea id="campus-description" maxlength="1000" rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
                         </label>
+                        <label class="block text-xs font-semibold text-slate-600">Fotografía del plantel (opcional)
+                            <input id="campus-photo" type="file" accept="image/jpeg,image/png,image/webp"
+                                class="mt-1 w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-rose-50 file:px-3 file:py-2 file:text-xs file:font-bold file:text-rose-900">
+                            <span class="mt-1 block text-[10px] font-normal text-slate-400">JPG, PNG o WebP; máximo 5 MB.</span>
+                        </label>
+                        <img id="campus-photo-preview" alt="Fotografía actual del plantel"
+                            class="hidden max-h-40 w-full rounded-lg object-cover">
                         <div class="grid grid-cols-2 gap-3">
                             <label class="block text-xs font-semibold text-slate-600">Latitud
                                 <input id="campus-latitude" type="number" step="any" min="-90" max="90" required value="25.7877647" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -100,6 +115,11 @@ $csrf = createAdminCsrfToken();
                         </label>
                         <label class="block text-xs font-semibold text-slate-600">Descripción
                             <textarea id="safe-description" maxlength="1000" rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+                        </label>
+                        <label class="block text-xs font-semibold text-slate-600">Fotografía del punto (opcional)
+                            <input id="safe-photo" type="file" accept="image/jpeg,image/png,image/webp"
+                                class="mt-1 w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-xs file:font-bold file:text-emerald-800">
+                            <span class="mt-1 block text-[10px] font-normal text-slate-400">JPG, PNG o WebP; máximo 5 MB.</span>
                         </label>
                         <div class="grid grid-cols-2 gap-3">
                             <label class="block text-xs font-semibold text-slate-600">Latitud
@@ -172,7 +192,7 @@ $csrf = createAdminCsrfToken();
                 <div class="flex items-center justify-between gap-3 mb-3">
                     <div>
                         <h2 class="brand-heading font-bold">Mapa de selección</h2>
-                        <p id="map-pick-status" class="text-xs text-slate-500 mt-1">Elige qué ubicación deseas fijar y haz clic en el mapa.</p>
+                        <p id="map-pick-status" class="text-xs text-slate-500 mt-1">El mapa muestra General Escobedo; el exterior sombreado no es seleccionable.</p>
                     </div>
                     <button type="button" onclick="cancelLocationPick()" title="Cancelar selección" class="brand-secondary-button w-9 h-9 rounded-lg">
                         <i class="fa-solid fa-xmark"></i>
@@ -185,6 +205,7 @@ $csrf = createAdminCsrfToken();
 
     <div id="toast" role="status" class="fixed bottom-4 right-4 hidden max-w-sm rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="../assets/js/municipality.js?v=<?= filemtime(__DIR__ . '/../assets/js/municipality.js') ?>"></script>
     <script src="../assets/js/route-routing.js?v=<?= filemtime(__DIR__ . '/../assets/js/route-routing.js') ?>"></script>
     <script>
         const csrfToken = <?= json_encode($csrf, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -202,9 +223,10 @@ $csrf = createAdminCsrfToken();
         let routeDraftFinished = false;
         let routeDraftUsedManualFallback = false;
         let routeAlignmentInProgress = false;
+        let escobedoBoundaryFeature = null;
 
         document.addEventListener('DOMContentLoaded', () => {
-            map = L.map('locations-map').setView(fallbackCenter, 16);
+            map = L.map('locations-map', { maxBoundsViscosity: 1.0 }).setView(fallbackCenter, 16);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '&copy; OpenStreetMap contributors'
@@ -214,6 +236,14 @@ $csrf = createAdminCsrfToken();
             draftRouteLayer = L.layerGroup().addTo(map);
             map.on('click', event => {
                 if (!activeTarget) return;
+                if (!escobedoBoundaryFeature) {
+                    showToast('Espera a que cargue el límite de General Escobedo.', true);
+                    return;
+                }
+                if (!window.RSEscobedoBoundary.contains(escobedoBoundaryFeature, event.latlng.lat, event.latlng.lng)) {
+                    showToast('Solo puedes seleccionar ubicaciones dentro de General Escobedo.', true);
+                    return;
+                }
                 if (activeTarget === 'route') {
                     addRouteDraftPoint(event.latlng);
                     return;
@@ -230,8 +260,19 @@ $csrf = createAdminCsrfToken();
             document.getElementById('safe-point-form').addEventListener('submit', createSafePoint);
             document.getElementById('route-form').addEventListener('submit', saveSafeRoute);
             document.getElementById('route-color').addEventListener('input', drawRouteDraft);
+            loadEscobedoBoundary();
             loadLocations();
         });
+
+        async function loadEscobedoBoundary() {
+            try {
+                escobedoBoundaryFeature = await window.RSEscobedoBoundary.load('../data/escobedo-boundary.geojson');
+                window.RSEscobedoBoundary.addMapBoundary(map, escobedoBoundaryFeature);
+            } catch (error) {
+                console.error('No se pudo cargar el límite municipal:', error);
+                showToast('No se pudo cargar el límite municipal. No es posible seleccionar ubicaciones.', true);
+            }
+        }
 
         function pickCoordinates(target) {
             if (routeAlignmentInProgress) {
@@ -262,15 +303,22 @@ $csrf = createAdminCsrfToken();
                 campusLocation = campus;
                 savedMarkers.clearLayers();
                 savedRoutesLayer.clearLayers();
-                savedRoutesLayer.clearLayers();
                 if (campus) {
                     document.getElementById('campus-name').value = campus.name;
                     document.getElementById('campus-address').value = campus.address;
                     document.getElementById('campus-description').value = campus.description || '';
                     document.getElementById('campus-latitude').value = campus.latitude;
                     document.getElementById('campus-longitude').value = campus.longitude;
+                    const campusPhotoPreview = document.getElementById('campus-photo-preview');
+                    if (campus.image_path) {
+                        campusPhotoPreview.src = `../${campus.image_path}`;
+                        campusPhotoPreview.alt = `Fotografía de ${campus.name}`;
+                        campusPhotoPreview.classList.remove('hidden');
+                    } else {
+                        campusPhotoPreview.removeAttribute('src');
+                        campusPhotoPreview.classList.add('hidden');
+                    }
                     addLocationMarker(campus, 'fa-school', '#6b1426', 'Plantel');
-                    map.setView([Number(campus.latitude), Number(campus.longitude)], 16);
                 }
                 safePoints.forEach(point => addLocationMarker(point, 'fa-shield-halved', '#15803d', 'Punto seguro'));
                 renderSafePoints(safePoints);
@@ -306,7 +354,10 @@ $csrf = createAdminCsrfToken();
                     iconAnchor: [18, 18]
                 })
             }).addTo(savedMarkers);
-            marker.bindPopup(`<strong>${escapeHtml(label)}: ${escapeHtml(location.name)}</strong><br>${escapeHtml(location.address)}`);
+            const photoHtml = location.image_path
+                ? `<img src="../${escapeHtml(location.image_path)}" alt="${escapeHtml(location.name)}" class="mt-2 max-h-40 w-full rounded-lg object-cover">`
+                : '';
+            marker.bindPopup(`<strong>${escapeHtml(label)}: ${escapeHtml(location.name)}</strong><br>${escapeHtml(location.address)}${photoHtml}`);
         }
 
         function renderSafePoints(points) {
@@ -318,15 +369,60 @@ $csrf = createAdminCsrfToken();
             }
             points.forEach(point => {
                 const item = document.createElement('article');
-                item.className = 'brand-list-item flex items-start justify-between gap-3 p-3';
-                item.innerHTML = `<div class="min-w-0"><h3 class="text-sm font-bold">${escapeHtml(point.name)}</h3><p class="text-xs text-slate-500 mt-1">${escapeHtml(point.address)}</p><p class="text-xs text-slate-400 mt-1">${Number(point.latitude).toFixed(5)}, ${Number(point.longitude).toFixed(5)}</p></div>`;
+                item.className = 'brand-list-item space-y-3 p-3';
+                item.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        ${point.image_path ? `<img src="../${escapeHtml(point.image_path)}" alt="${escapeHtml(point.name)}" class="h-16 w-16 shrink-0 rounded-lg object-cover">` : ''}
+                        <div class="min-w-0 flex-1">
+                            <h3 class="text-sm font-bold">${escapeHtml(point.name)}</h3>
+                            <p class="mt-1 text-xs text-slate-500">${escapeHtml(point.address)}</p>
+                            <p class="mt-1 text-xs text-slate-400">${Number(point.latitude).toFixed(5)}, ${Number(point.longitude).toFixed(5)}</p>
+                        </div>
+                    </div>`;
+                const controls = document.createElement('div');
+                controls.className = 'flex flex-wrap items-center gap-2';
+                const photoInput = document.createElement('input');
+                photoInput.type = 'file';
+                photoInput.accept = 'image/jpeg,image/png,image/webp';
+                photoInput.setAttribute('aria-label', `Fotografía de ${point.name}`);
+                photoInput.className = 'min-w-0 flex-1 text-xs text-slate-500';
+                const photoButton = document.createElement('button');
+                photoButton.type = 'button';
+                photoButton.className = 'brand-secondary-button rounded-lg px-2.5 py-2 text-xs font-semibold';
+                photoButton.textContent = point.image_path ? 'Cambiar foto' : 'Agregar foto';
+                photoButton.addEventListener('click', async () => {
+                    if (!photoInput.files.length) {
+                        showToast('Selecciona una fotografía primero.', true);
+                        return;
+                    }
+                    photoButton.disabled = true;
+                    try {
+                        await uploadSafePointPhoto(point.id, photoInput.files[0]);
+                        await loadLocations();
+                        showToast('Fotografía del punto seguro guardada.');
+                    } catch (error) {
+                        showToast(error.message, true);
+                    } finally {
+                        photoButton.disabled = false;
+                    }
+                });
+                controls.append(photoInput, photoButton);
+                if (point.image_path) {
+                    const removePhotoButton = document.createElement('button');
+                    removePhotoButton.type = 'button';
+                    removePhotoButton.className = 'brand-secondary-button rounded-lg px-2.5 py-2 text-xs font-semibold';
+                    removePhotoButton.textContent = 'Quitar foto';
+                    removePhotoButton.addEventListener('click', () => removeSafePointPhoto(point.id));
+                    controls.appendChild(removePhotoButton);
+                }
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = 'shrink-0 rounded-lg border border-red-200 px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50';
-                button.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                button.className = 'ml-auto rounded-lg border border-red-200 px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50';
+                button.innerHTML = '<i class="fa-solid fa-trash-can mr-1"></i>Eliminar';
                 button.title = 'Eliminar punto seguro';
                 button.addEventListener('click', () => deleteSafePoint(point.id));
-                item.appendChild(button);
+                controls.appendChild(button);
+                item.appendChild(controls);
                 list.appendChild(item);
             });
         }
@@ -457,6 +553,8 @@ $csrf = createAdminCsrfToken();
         async function saveCampus(event) {
             event.preventDefault();
             const form = event.currentTarget;
+            const submit = form.querySelector('[type="submit"]');
+            const photo = document.getElementById('campus-photo').files[0] || null;
             const payload = {
                 name: document.getElementById('campus-name').value.trim(),
                 address: document.getElementById('campus-address').value.trim(),
@@ -464,12 +562,45 @@ $csrf = createAdminCsrfToken();
                 latitude: Number(document.getElementById('campus-latitude').value),
                 longitude: Number(document.getElementById('campus-longitude').value)
             };
-            await sendLocationAction('campus-save', payload, form, 'Ubicación principal guardada');
+            if (!window.RSEscobedoBoundary.contains(escobedoBoundaryFeature, payload.latitude, payload.longitude)) {
+                showToast('La ubicación del plantel debe estar dentro de General Escobedo.', true);
+                return;
+            }
+            if (photo && photo.size > 5 * 1024 * 1024) {
+                showToast('La fotografía no debe exceder 5 MB.', true);
+                return;
+            }
+
+            submit.disabled = true;
+            try {
+                await postLocationAction('campus-save', payload);
+                let photoError = null;
+                if (photo) {
+                    try {
+                        await uploadCampusPhoto(photo);
+                        document.getElementById('campus-photo').value = '';
+                    } catch (error) {
+                        photoError = error;
+                    }
+                }
+                await loadLocations();
+                if (photoError) {
+                    showToast(`Plantel guardado, pero no se pudo guardar la fotografía: ${photoError.message}`, true);
+                } else {
+                    showToast(photo ? 'Plantel y fotografía guardados' : 'Ubicación principal guardada');
+                }
+            } catch (error) {
+                showToast(error.message, true);
+            } finally {
+                submit.disabled = false;
+            }
         }
 
         async function createSafePoint(event) {
             event.preventDefault();
             const form = event.currentTarget;
+            const submit = form.querySelector('[type="submit"]');
+            const photo = document.getElementById('safe-photo').files[0] || null;
             const payload = {
                 name: document.getElementById('safe-name').value.trim(),
                 address: document.getElementById('safe-address').value.trim(),
@@ -477,7 +608,78 @@ $csrf = createAdminCsrfToken();
                 latitude: Number(document.getElementById('safe-latitude').value),
                 longitude: Number(document.getElementById('safe-longitude').value)
             };
-            await sendLocationAction('safe-point-create', payload, form, 'Punto seguro agregado');
+            if (!window.RSEscobedoBoundary.contains(escobedoBoundaryFeature, payload.latitude, payload.longitude)) {
+                showToast('El punto seguro debe estar dentro de General Escobedo.', true);
+                return;
+            }
+            if (photo && photo.size > 5 * 1024 * 1024) {
+                showToast('La fotografía no debe exceder 5 MB.', true);
+                return;
+            }
+
+            submit.disabled = true;
+            try {
+                const result = await postLocationAction('safe-point-create', payload);
+                let photoError = null;
+                if (photo) {
+                    try {
+                        await uploadSafePointPhoto(result.id, photo);
+                    } catch (error) {
+                        photoError = error;
+                    }
+                }
+                form.reset();
+                await loadLocations();
+                if (photoError) {
+                    showToast(`Punto agregado, pero no se pudo guardar la foto: ${photoError.message}`, true);
+                } else {
+                    showToast('Punto seguro agregado');
+                }
+            } catch (error) {
+                showToast(error.message, true);
+            } finally {
+                submit.disabled = false;
+            }
+        }
+
+        async function uploadSafePointPhoto(id, file) {
+            if (file.size > 5 * 1024 * 1024) throw new Error('La fotografía no debe exceder 5 MB.');
+            const formData = new FormData();
+            formData.set('id', String(id));
+            formData.set('photo', file);
+            const response = await fetch(`${apiUrl}?action=safe-point-upload-photo`, {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrfToken },
+                body: formData
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar la fotografía');
+            return result;
+        }
+
+        async function uploadCampusPhoto(file) {
+            if (file.size > 5 * 1024 * 1024) throw new Error('La fotografía no debe exceder 5 MB.');
+            const formData = new FormData();
+            formData.set('photo', file);
+            const response = await fetch(`${apiUrl}?action=campus-upload-photo`, {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrfToken },
+                body: formData
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar la fotografía');
+            return result;
+        }
+
+        async function removeSafePointPhoto(id) {
+            if (!window.confirm('¿Quitar la fotografía de este punto seguro?')) return;
+            try {
+                await postLocationAction('safe-point-remove-photo', { id });
+                await loadLocations();
+                showToast('Fotografía del punto seguro eliminada');
+            } catch (error) {
+                showToast(error.message, true);
+            }
         }
 
         async function deleteSafePoint(id) {

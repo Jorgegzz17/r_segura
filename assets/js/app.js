@@ -18,7 +18,26 @@ let reportsLayerGroup;
 let campusLayerGroup;
 let safePointsLayerGroup;
 let safeRoutesLayerGroup;
+let routeProposalsLayerGroup;
+let routeProposalDraftLayerGroup;
+let routeProposalPoints = [];
+let routeProposalDrawing = false;
+let routeProposalFinished = false;
 let editingReportId = null;
+let robberyAlertsEnabled = false;
+let robberyAlertsInitialized = false;
+const knownReportIds = new Set();
+const ROBBERY_ALERTS_STORAGE_KEY = 'rs-robbery-alerts-enabled';
+let escobedoBoundaryFeature = null;
+let emergencyContactNumber = '';
+let activeSOSSession = null;
+let sosLocationWatchId = null;
+let sosExpiryTimer = null;
+let sosHeartbeatTimer = null;
+let sosHeartbeatInProgress = false;
+let sosLastLocationSentAt = 0;
+let sosLocationUpdateInProgress = false;
+let sosLocationErrorShown = false;
 
 const API_URL = 'api/reports.php';
 const CBTIS_COORDS = [25.7877647, -100.3296582];
@@ -37,8 +56,13 @@ document.addEventListener('DOMContentLoaded', () => {
     loadReports();
     loadMapLocations();
     loadStats();
+    initRobberyAlertNotifications();
+    initEmergencySOS();
     if (new URLSearchParams(window.location.search).get('report') === '1' && window.RS_USER_AUTHENTICATED) {
         openReportModal();
+    }
+    if (new URLSearchParams(window.location.search).get('propose_route') === '1' && window.RS_USER_AUTHENTICATED) {
+        openRouteProposalPanel();
     }
 });
 
@@ -70,7 +94,7 @@ function updateThemeIcon() {
    Mapa y ubicaciones de reportes
    ============================================================ */
 function initMap() {
-    map = L.map('map', { zoomControl: true }).setView(CBTIS_COORDS, 16);
+    map = L.map('map', { zoomControl: true, maxBoundsViscosity: 1.0 }).setView(CBTIS_COORDS, 16);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -81,12 +105,37 @@ function initMap() {
     campusLayerGroup = L.layerGroup().addTo(map);
     safePointsLayerGroup = L.layerGroup().addTo(map);
     safeRoutesLayerGroup = L.layerGroup().addTo(map);
+    routeProposalsLayerGroup = L.layerGroup().addTo(map);
+    routeProposalDraftLayerGroup = L.layerGroup().addTo(map);
+    loadApprovedRouteProposals();
+    loadEscobedoMunicipalityBoundary();
     map.on('click', event => {
+        if (routeProposalDrawing) {
+            addRouteProposalPoint(event.latlng);
+            return;
+        }
         if (!pickingLocation) return;
-        setPickedCoords(event.latlng.lat, event.latlng.lng);
+        if (!setPickedCoords(event.latlng.lat, event.latlng.lng)) return;
         stopMapPick();
         openReportModal();
     });
+}
+
+async function loadEscobedoMunicipalityBoundary() {
+    try {
+        escobedoBoundaryFeature = await window.RSEscobedoBoundary.load('data/escobedo-boundary.geojson');
+        window.RSEscobedoBoundary.addMapBoundary(map, escobedoBoundaryFeature);
+    } catch (error) {
+        console.error('Error al cargar el límite municipal:', error);
+        showToast('No se pudo cargar el límite de Escobedo. No podrás seleccionar una ubicación para reportar.', 'error');
+    }
+}
+
+function isEscobedoCoordinate(latitude, longitude) {
+    return Boolean(
+        escobedoBoundaryFeature
+        && window.RSEscobedoBoundary.contains(escobedoBoundaryFeature, latitude, longitude)
+    );
 }
 
 async function loadMapLocations() {
@@ -109,8 +158,23 @@ async function loadMapLocations() {
                     <strong>${escapeHtml(campus.name)}</strong>
                     <p class="text-xs mt-1">${escapeHtml(campus.address)}</p>
                     ${campus.description ? `<p class="text-xs mt-1">${escapeHtml(campus.description)}</p>` : ''}
+                    ${campus.image_path ? `
+                        <button type="button" data-campus-photo
+                            class="mt-2 block h-28 w-full overflow-hidden rounded-lg border border-slate-200"
+                            aria-label="Ampliar fotografía del plantel">
+                            <img src="${escapeHtml(campus.image_path)}" alt="${escapeHtml(campus.name)}"
+                                class="h-full w-full object-cover" loading="lazy">
+                        </button>` : ''}
                 </div>
             `);
+            if (campus.image_path) {
+                campusMarker.on('popupopen', event => {
+                    const photoButton = event.popup.getElement().querySelector('[data-campus-photo]');
+                    if (photoButton) {
+                        photoButton.addEventListener('click', () => openImageLightbox(campus.image_path, campus.name));
+                    }
+                });
+            }
             map.setView(coords, 16);
         }
 
@@ -118,13 +182,29 @@ async function loadMapLocations() {
             const marker = L.marker([Number(point.latitude), Number(point.longitude)], {
                 icon: createCustomIcon('fa-shield-halved', '#15803d')
             }).addTo(safePointsLayerGroup);
+            const photoHtml = point.image_path ? `
+                <button type="button" data-safe-point-photo
+                    class="mt-2 block h-28 w-full overflow-hidden rounded-lg border border-slate-200"
+                    aria-label="Ampliar fotografía de ${escapeHtml(point.name)}">
+                    <img src="${escapeHtml(point.image_path)}" alt="${escapeHtml(point.name)}"
+                        class="h-full w-full object-cover" loading="lazy">
+                </button>` : '';
             marker.bindPopup(`
                 <div class="p-2">
                     <strong>${escapeHtml(point.name)}</strong>
                     <p class="text-xs mt-1">${escapeHtml(point.address)}</p>
                     ${point.description ? `<p class="text-xs mt-1">${escapeHtml(point.description)}</p>` : ''}
+                    ${photoHtml}
                 </div>
             `);
+            if (point.image_path) {
+                marker.on('popupopen', event => {
+                    const photoButton = event.popup.getElement().querySelector('[data-safe-point-photo]');
+                    if (photoButton) {
+                        photoButton.addEventListener('click', () => openImageLightbox(point.image_path, point.name));
+                    }
+                });
+            }
         });
 
         const alignmentResults = await Promise.all(result.data.routes.map(async route => {
@@ -261,6 +341,121 @@ async function loadReports() {
     }
 }
 
+function initRobberyAlertNotifications() {
+    robberyAlertsEnabled = localStorage.getItem(ROBBERY_ALERTS_STORAGE_KEY) === 'true';
+    updateRobberyAlertButton();
+    pollRobberyReports();
+    window.setInterval(pollRobberyReports, 30000);
+}
+
+async function toggleRobberyAlerts() {
+    robberyAlertsEnabled = !robberyAlertsEnabled;
+    localStorage.setItem(ROBBERY_ALERTS_STORAGE_KEY, String(robberyAlertsEnabled));
+
+    if (robberyAlertsEnabled && 'Notification' in window && Notification.permission === 'default') {
+        try {
+            await Notification.requestPermission();
+        } catch (error) {
+            console.error('No se pudo solicitar permiso para notificaciones:', error);
+        }
+    }
+
+    updateRobberyAlertButton();
+    if (!robberyAlertsEnabled) {
+        showToast('Alertas de robo desactivadas', 'info');
+    } else if ('Notification' in window && Notification.permission !== 'granted') {
+        showToast('Avisos dentro de la página activados. Permite las notificaciones del navegador para recibirlas fuera de ella.', 'info');
+    } else {
+        showToast('Alertas de nuevos reportes de robo activadas', 'success');
+    }
+}
+
+function updateRobberyAlertButton() {
+    const button = document.getElementById('robbery-alert-toggle');
+    const label = document.getElementById('robbery-alert-label');
+    if (!button || !label) return;
+
+    button.setAttribute('aria-pressed', String(robberyAlertsEnabled));
+    button.setAttribute('aria-label', robberyAlertsEnabled
+        ? 'Desactivar alertas de nuevos reportes de robo'
+        : 'Activar alertas de nuevos reportes de robo');
+    label.textContent = robberyAlertsEnabled ? 'Alertas activadas' : 'Alertas apagadas';
+    button.title = robberyAlertsEnabled
+        ? 'Desactivar alertas de nuevos reportes de robo'
+        : 'Activar alertas de nuevos reportes de robo';
+    button.style.backgroundColor = robberyAlertsEnabled ? '#dcfce7' : '#ff1f1f';
+    button.style.color = robberyAlertsEnabled ? '#166534' : '#ffffff';
+    button.style.borderColor = robberyAlertsEnabled ? '#86efac' : '#dc2626';
+}
+
+let robberyPollInProgress = false;
+
+async function pollRobberyReports() {
+    if (robberyPollInProgress) return;
+    robberyPollInProgress = true;
+
+    try {
+        const response = await fetch(`${API_URL}?action=list`, { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok || !result.ok || !Array.isArray(result.data)) {
+            throw new Error(result.error || 'No se pudieron consultar nuevos reportes');
+        }
+
+        if (!robberyAlertsInitialized) {
+            result.data.forEach(report => knownReportIds.add(Number(report.id)));
+            robberyAlertsInitialized = true;
+            return;
+        }
+
+        const newRobberyReports = [];
+        result.data.forEach(report => {
+            const reportId = Number(report.id);
+            if (!knownReportIds.has(reportId) && report.type === 'Acoso / Robo') {
+                newRobberyReports.push(report);
+            }
+            knownReportIds.add(reportId);
+        });
+
+        if (newRobberyReports.length && robberyAlertsEnabled) {
+            newRobberyReports.forEach(showRobberyAlert);
+            loadReports();
+            loadStats();
+        }
+    } catch (error) {
+        console.error('Error al revisar reportes de robo:', error);
+    } finally {
+        robberyPollInProgress = false;
+    }
+}
+
+function showRobberyAlert(report) {
+    const location = String(report.location || 'Ubicación no especificada');
+    const description = String(report.description || '');
+
+    if (
+        robberyAlertsEnabled
+        && document.visibilityState === 'hidden'
+        && 'Notification' in window
+        && Notification.permission === 'granted'
+    ) {
+        try {
+            const notification = new Notification('Alerta: reporte de acoso o robo', {
+                body: `${location}${description ? ` — ${description}` : ''}`,
+                tag: `robbery-report-${Number(report.id)}`
+            });
+            notification.onclick = () => {
+                window.focus();
+                notification.close();
+            };
+            return;
+        } catch (error) {
+            console.error('No se pudo mostrar la notificación de robo:', error);
+        }
+    }
+
+    showToast(`Nuevo reporte de acoso o robo: ${location}${description ? ` — ${description}` : ''}`, 'info');
+}
+
 async function loadStats() {
     try {
         const res = await fetch(`${API_URL}?action=stats`);
@@ -383,7 +578,7 @@ async function handleReportSubmit(e) {
         type: document.getElementById('report-type').value,
         location: document.getElementById('report-location').value.trim(),
         description: document.getElementById('report-description').value.trim(),
-        severity: selectedSeverity,
+        severity: document.getElementById('report-type').value === 'Acoso / Robo' ? 'alta' : selectedSeverity,
         latitude: pickedCoords[0],
         longitude: pickedCoords[1]
     };
@@ -402,6 +597,7 @@ async function handleReportSubmit(e) {
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || 'Error al guardar');
 
+        const wasEditing = Boolean(editingReportId);
         const reportId = editingReportId || json.data.id;
         const photoInput = document.getElementById('report-photo');
         if (photoInput.files.length > 0) {
@@ -419,9 +615,11 @@ async function handleReportSubmit(e) {
             if (!uploadResponse.ok || !uploadResult.ok) throw new Error(uploadResult.error || 'No se pudo cargar la fotografía');
         }
 
-        showToast(editingReportId ? 'Reporte actualizado' : 'Reporte publicado. ¡Gracias por ayudar!', 'success');
+        if (!wasEditing) knownReportIds.add(Number(reportId));
+        showToast(wasEditing ? 'Reporte actualizado' : 'Reporte publicado. ¡Gracias por ayudar!', 'success');
         closeReportModal();
         document.getElementById('report-form').reset();
+        updateReportTypeIcon(document.getElementById('report-type').value);
         setSeverity('media');
         clearPickedCoords();
         editingReportId = null;
@@ -478,7 +676,10 @@ async function editOwnReport(id) {
     document.getElementById('report-location').value = report.location;
     document.getElementById('report-description').value = report.description;
     setSeverity(report.severity);
-    setPickedCoords(Number(report.latitude), Number(report.longitude));
+    if (!setPickedCoords(Number(report.latitude), Number(report.longitude))) {
+        editingReportId = null;
+        return;
+    }
     closeAccountModal();
     openReportModal();
 }
@@ -525,12 +726,20 @@ function renderReports() {
         const sevColor = SEVERITY_COLORS[report.severity] || '#f59e0b';
         const isResolved = report.status === 'resuelto';
         const media = Array.isArray(report.media) ? report.media : [];
+        const updates = Array.isArray(report.updates) ? report.updates : [];
         const photoHtml = media.length ? `
             <button type="button" class="report-card-photo mt-2 h-32 w-full overflow-hidden rounded-lg border border-slate-200"
                 onclick="event.stopPropagation(); openImageLightbox('${escapeHtml(media[0].file_path)}', '${escapeHtml(media[0].file_name)}')"
                 aria-label="Ampliar fotografía del reporte">
                 <img src="${escapeHtml(media[0].file_path)}" alt="${escapeHtml(media[0].file_name)}" class="h-full w-full object-cover">
             </button>` : '';
+        const updateHtml = updates.length ? `
+            <div class="mt-2 space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <p class="text-[10px] font-bold text-slate-600">Seguimiento del administrador</p>
+                ${updates.slice(-3).map(update => `
+                    <p class="text-[10px] text-slate-600">${escapeHtml(update.message)}</p>
+                `).join('')}
+            </div>` : '';
 
         const card = document.createElement('div');
         card.className = `p-3 bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:border-slate-300 dark:hover:border-slate-600 transition cursor-pointer ${isResolved ? 'opacity-60' : ''}`;
@@ -549,6 +758,7 @@ function renderReports() {
             <h4 class="text-xs font-bold text-slate-800 dark:text-slate-100 mt-1.5">${escapeHtml(report.location)}</h4>
             <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">${escapeHtml(report.description)}</p>
             ${photoHtml}
+            ${updateHtml}
             <div class="mt-2 flex items-center justify-between text-xs pt-1">
                 <div class="flex items-center space-x-3">
                 <button type="button" onclick="likeReport(event, ${Number(report.id)})" ${Number(report.liked_by_me) === 1 ? 'disabled aria-pressed="true" title="Ya diste apoyo a este reporte"' : 'aria-pressed="false"'}
@@ -593,11 +803,219 @@ function toggleMapLayer(layer) {
         reports: reportsLayerGroup,
         routes: safeRoutesLayerGroup,
         campus: campusLayerGroup,
-        safePoints: safePointsLayerGroup
+        safePoints: safePointsLayerGroup,
+        routeProposals: routeProposalsLayerGroup
     };
-    const ids = { reports: 'layer-reports', routes: 'layer-routes', campus: 'layer-campus', safePoints: 'layer-safe-points' };
+    const ids = {
+        reports: 'layer-reports',
+        routes: 'layer-routes',
+        campus: 'layer-campus',
+        safePoints: 'layer-safe-points',
+        routeProposals: 'layer-route-proposals'
+    };
     const checked = document.getElementById(ids[layer]).checked;
     checked ? map.addLayer(groups[layer]) : map.removeLayer(groups[layer]);
+}
+
+async function loadApprovedRouteProposals() {
+    try {
+        const response = await fetch('api/route_proposals.php?action=approved');
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+            throw new Error(result.error || 'No se pudieron cargar las rutas propuestas aprobadas');
+        }
+
+        routeProposalsLayerGroup.clearLayers();
+        result.data.proposals.forEach(proposal => {
+            const points = proposal.points.map(point => [Number(point.latitude), Number(point.longitude)]);
+            if (points.length < 2) return;
+
+            const line = L.polyline(points, {
+                color: '#eab308',
+                weight: 5,
+                opacity: 0.9,
+                lineCap: 'round',
+                lineJoin: 'round'
+            }).addTo(routeProposalsLayerGroup);
+            const description = proposal.description
+                ? `<p class="mt-1 text-xs">${escapeHtml(proposal.description)}</p>`
+                : '';
+            line.bindPopup(`<strong>${escapeHtml(proposal.name)}</strong>${description}<p class="mt-1 text-[10px] text-slate-500">Ruta comunitaria aprobada</p>`);
+        });
+    } catch (error) {
+        console.error('Error al cargar rutas propuestas aprobadas:', error);
+        showToast(error.message || 'No se pudieron cargar las rutas propuestas aprobadas', 'error');
+    }
+}
+
+function openRouteProposalPanel() {
+    if (!window.RS_USER_AUTHENTICATED) {
+        window.location.href = 'index.php?propose_route=1';
+        return;
+    }
+
+    document.getElementById('route-proposal-panel').classList.remove('hidden');
+    if (window.innerWidth < 768) {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar.classList.contains('open')) toggleSidebar();
+    }
+}
+
+function startRouteProposalDrawing() {
+    if (!window.RS_USER_AUTHENTICATED) {
+        window.location.href = 'index.php?propose_route=1';
+        return;
+    }
+    if (!escobedoBoundaryFeature) {
+        showToast('Espera a que cargue el límite municipal de Escobedo', 'info');
+        return;
+    }
+
+    stopMapPick();
+    routeProposalPoints = [];
+    routeProposalFinished = false;
+    routeProposalDrawing = true;
+    routeProposalDraftLayerGroup.clearLayers();
+    document.getElementById('route-proposal-status').textContent = 'Toca el mapa para marcar el inicio y los puntos del recorrido.';
+    document.getElementById('route-proposal-draw-button').disabled = true;
+    document.getElementById('route-proposal-finish-button').disabled = true;
+    document.getElementById('route-proposal-submit-button').disabled = true;
+    document.getElementById('route-proposal-map-controls').classList.remove('hidden');
+    document.getElementById('route-proposal-map-finish-button').disabled = true;
+    document.getElementById('route-proposal-map-status').textContent = 'Toca el mapa para marcar el inicio y los puntos.';
+    document.body.classList.add('proposing-route');
+    showToast('Toca el mapa para marcar el inicio y los puntos de la ruta', 'info');
+    if (window.innerWidth < 768) closeSidebar();
+}
+
+function addRouteProposalPoint(latlng) {
+    if (!isEscobedoCoordinate(latlng.lat, latlng.lng)) {
+        showToast('Solo puedes proponer rutas dentro de General Escobedo', 'error');
+        return;
+    }
+    if (routeProposalPoints.length >= 198) {
+        showToast('La propuesta ya alcanzó el máximo de puntos', 'error');
+        return;
+    }
+
+    routeProposalPoints.push(latlng);
+    renderRouteProposalDraft();
+    document.getElementById('route-proposal-finish-button').disabled = false;
+    const status =
+        `${routeProposalPoints.length} punto${routeProposalPoints.length === 1 ? '' : 's'} marcado${routeProposalPoints.length === 1 ? '' : 's'}. Cuando termines, agrega el plantel como destino.`;
+    document.getElementById('route-proposal-status').textContent = status;
+    document.getElementById('route-proposal-map-finish-button').disabled = false;
+    document.getElementById('route-proposal-map-status').textContent = status;
+}
+
+function renderRouteProposalDraft() {
+    routeProposalDraftLayerGroup.clearLayers();
+    if (routeProposalPoints.length > 1) {
+        L.polyline(routeProposalPoints, {
+            color: '#d97706',
+            weight: 5,
+            opacity: 0.85,
+            dashArray: routeProposalFinished ? null : '8 8',
+            lineCap: 'round',
+            lineJoin: 'round'
+        }).addTo(routeProposalDraftLayerGroup);
+    }
+
+    routeProposalPoints.forEach((point, index) => {
+        L.circleMarker(point, {
+            radius: index === 0 ? 7 : 5,
+            color: '#92400e',
+            weight: 2,
+            fillColor: '#facc15',
+            fillOpacity: 1
+        }).addTo(routeProposalDraftLayerGroup);
+    });
+}
+
+function finishRouteProposalDrawing() {
+    if (!routeProposalDrawing || routeProposalPoints.length === 0) {
+        showToast('Marca al menos un punto en el mapa antes de terminar', 'error');
+        return;
+    }
+    if (!campusMarker) {
+        showToast('Espera a que cargue la ubicación del plantel antes de terminar la ruta', 'info');
+        return;
+    }
+
+    routeProposalPoints.push(L.latLng(campusCoords[0], campusCoords[1]));
+    routeProposalDrawing = false;
+    routeProposalFinished = true;
+    document.body.classList.remove('proposing-route');
+    document.getElementById('route-proposal-map-controls').classList.add('hidden');
+    if (window.innerWidth < 768) {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar.classList.contains('open')) toggleSidebar();
+    }
+    renderRouteProposalDraft();
+    document.getElementById('route-proposal-draw-button').disabled = true;
+    document.getElementById('route-proposal-finish-button').disabled = true;
+    document.getElementById('route-proposal-submit-button').disabled = false;
+    document.getElementById('route-proposal-status').textContent =
+        `Ruta marcada con destino en el plantel (${routeProposalPoints.length - 1} punto${routeProposalPoints.length === 2 ? '' : 's'} más el destino).`;
+}
+
+async function submitRouteProposal(event) {
+    event.preventDefault();
+    if (!routeProposalFinished || routeProposalPoints.length < 2) {
+        showToast('Primero marca la ruta y termina en el plantel', 'error');
+        return;
+    }
+    if (!window.RS_USER_CSRF_TOKEN) {
+        showToast('Tu sesión no está lista. Recarga la página e inténtalo de nuevo.', 'error');
+        return;
+    }
+
+    const submitButton = document.getElementById('route-proposal-submit-button');
+    submitButton.disabled = true;
+    try {
+        const response = await fetch('api/route_proposals.php?action=create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.RS_USER_CSRF_TOKEN
+            },
+            body: JSON.stringify({
+                name: document.getElementById('route-proposal-name').value.trim(),
+                description: document.getElementById('route-proposal-description').value.trim(),
+                points: routeProposalPoints.map(point => ({
+                    latitude: point.lat,
+                    longitude: point.lng
+                }))
+            })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+            throw new Error(result.error || 'No se pudo enviar la propuesta');
+        }
+
+        cancelRouteProposal();
+        showToast('Propuesta enviada. El administrador la revisará antes de publicarla.', 'success');
+    } catch (error) {
+        console.error('Error al enviar propuesta de ruta:', error);
+        showToast(error.message || 'No se pudo enviar la propuesta. Inténtalo de nuevo.', 'error');
+        submitButton.disabled = false;
+    }
+}
+
+function cancelRouteProposal() {
+    routeProposalDrawing = false;
+    routeProposalFinished = false;
+    routeProposalPoints = [];
+    document.body.classList.remove('proposing-route');
+    routeProposalDraftLayerGroup.clearLayers();
+    document.getElementById('route-proposal-map-controls').classList.add('hidden');
+    document.getElementById('route-proposal-map-finish-button').disabled = true;
+    document.getElementById('route-proposal-panel').classList.add('hidden');
+    document.getElementById('route-proposal-form').reset();
+    document.getElementById('route-proposal-draw-button').disabled = false;
+    document.getElementById('route-proposal-finish-button').disabled = true;
+    document.getElementById('route-proposal-submit-button').disabled = true;
+    document.getElementById('route-proposal-status').textContent = 'Aún no has trazado la ruta.';
 }
 
 function moveMapTo(coords, zoom) {
@@ -615,6 +1033,10 @@ function updateReportTypeIcon(type) {
     };
     const icon = document.getElementById('report-type-icon');
     icon.className = `fa-solid ${icons[type] || 'fa-circle-question'} absolute left-3 top-1/2 -translate-y-1/2 text-cbtis-wine`;
+    const isRobbery = type === 'Acoso / Robo';
+    const severityNote = document.getElementById('robbery-severity-note');
+    if (severityNote) severityNote.classList.toggle('hidden', !isRobbery);
+    setSeverity(isRobbery ? 'alta' : selectedSeverity);
 }
 
 function setSeverity(severity) {
@@ -622,21 +1044,36 @@ function setSeverity(severity) {
         throw new Error('El nivel de riesgo seleccionado no es válido.');
     }
 
-    selectedSeverity = severity;
+    const typeSelect = document.getElementById('report-type');
+    const isRobbery = typeSelect && typeSelect.value === 'Acoso / Robo';
+    selectedSeverity = isRobbery ? 'alta' : severity;
     document.querySelectorAll('#severity-group .severity-btn').forEach(button => {
-        const isSelected = button.dataset.severity === severity;
+        const isSelected = button.dataset.severity === selectedSeverity;
+        const isLocked = isRobbery && button.dataset.severity !== 'alta';
+        button.disabled = isLocked;
+        button.setAttribute('aria-disabled', String(isLocked));
         button.classList.toggle('is-selected', isSelected);
         button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     });
 }
 
 function setPickedCoords(lat, lng) {
+    if (!escobedoBoundaryFeature) {
+        showToast('Espera a que cargue el límite municipal de Escobedo', 'info');
+        return false;
+    }
+    if (!isEscobedoCoordinate(lat, lng)) {
+        showToast('Solo se pueden registrar reportes dentro del municipio de General Escobedo', 'error');
+        return false;
+    }
+
     pickedCoords = [lat, lng];
     document.getElementById('coords-value').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     if (tempMarker) map.removeLayer(tempMarker);
     tempMarker = L.marker(pickedCoords, {
         icon: createCustomIcon('fa-location-dot', '#6b1426', 'temp-marker-pulse')
     }).addTo(map);
+    return true;
 }
 
 function clearPickedCoords() {
@@ -646,6 +1083,10 @@ function clearPickedCoords() {
 }
 
 function startMapPick() {
+    if (!escobedoBoundaryFeature) {
+        showToast('Espera a que cargue el límite municipal de Escobedo', 'info');
+        return;
+    }
     pickingLocation = true;
     document.body.classList.add('picking-location');
     closeReportModal();
@@ -666,7 +1107,7 @@ function useMyLocation() {
     showToast('Obteniendo tu ubicación...', 'info');
     navigator.geolocation.getCurrentPosition(
         pos => {
-            setPickedCoords(pos.coords.latitude, pos.coords.longitude);
+            if (!setPickedCoords(pos.coords.latitude, pos.coords.longitude)) return;
             moveMapTo(pickedCoords, 17);
             showToast('Ubicación detectada', 'success');
         },
@@ -750,6 +1191,327 @@ function closeAccountModalFromBackdrop(event) {
 
 function toggleSOSModal() {
     document.getElementById('sos-modal').classList.toggle('hidden');
+    renderEmergencySOSState();
+}
+
+function initEmergencySOS() {
+    loadEmergencyContact();
+    restoreActiveSOS();
+}
+
+async function loadEmergencyContact() {
+    const status = document.getElementById('emergency-contact-status');
+    try {
+        const response = await fetch('api/sos.php?action=contact', {
+            headers: { 'X-CSRF-Token': window.RS_USER_CSRF_TOKEN },
+            cache: 'no-store'
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo cargar el contacto');
+
+        emergencyContactNumber = typeof result.phone === 'string' ? result.phone : '';
+        const input = document.getElementById('emergency-contact-phone');
+        if (input && document.activeElement !== input) input.value = emergencyContactNumber;
+        if (status) {
+            status.textContent = emergencyContactNumber
+                ? 'Contacto de emergencia guardado.'
+                : 'Aún no has registrado un contacto de emergencia.';
+            status.className = `mt-2 text-xs font-semibold ${emergencyContactNumber ? 'text-emerald-700' : 'text-amber-700'}`;
+        }
+        renderEmergencySOSState();
+    } catch (error) {
+        if (status) {
+            status.textContent = error instanceof Error ? error.message : 'No se pudo cargar el contacto.';
+            status.className = 'mt-2 text-xs font-semibold text-red-700';
+        }
+        console.error('Error al cargar contacto de emergencia:', error);
+    }
+}
+
+async function saveEmergencyContact(event) {
+    event.preventDefault();
+    const input = document.getElementById('emergency-contact-phone');
+    const status = document.getElementById('emergency-contact-status');
+    const submit = document.getElementById('emergency-contact-save');
+    const phone = input.value.trim();
+    if (phone !== '' && !/^\+[1-9]\d{7,14}$/.test(phone)) {
+        status.textContent = 'Usa formato internacional, por ejemplo +528112345678.';
+        status.className = 'mt-2 text-xs font-semibold text-red-700';
+        input.focus();
+        return;
+    }
+
+    submit.disabled = true;
+    try {
+        const response = await fetch('api/sos.php?action=contact', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.RS_USER_CSRF_TOKEN
+            },
+            body: JSON.stringify({ phone })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar el contacto');
+
+        emergencyContactNumber = result.phone || '';
+        input.value = emergencyContactNumber;
+        if (result.stopped_sos && activeSOSSession) {
+            stopSOSLocationWatch();
+            activeSOSSession = null;
+        }
+        status.textContent = emergencyContactNumber
+            ? 'Contacto de emergencia guardado.'
+            : 'Contacto de emergencia eliminado.';
+        status.className = 'mt-2 text-xs font-semibold text-emerald-700';
+        renderEmergencySOSState();
+        showToast(
+            result.stopped_sos
+                ? 'Contacto actualizado. Se detuvo el SOS anterior; vuelve a activarlo para avisar al nuevo contacto.'
+                : emergencyContactNumber ? 'Contacto de emergencia guardado' : 'Contacto de emergencia eliminado',
+            'success'
+        );
+    } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'No se pudo guardar el contacto.';
+        status.className = 'mt-2 text-xs font-semibold text-red-700';
+    } finally {
+        submit.disabled = false;
+    }
+}
+
+function openEmergencyContactSettings() {
+    document.getElementById('sos-modal').classList.add('hidden');
+    openAccountModal();
+    window.setTimeout(() => document.getElementById('emergency-contact-phone').focus(), 0);
+}
+
+function renderEmergencySOSState() {
+    const summary = document.getElementById('sos-contact-summary');
+    const startButton = document.getElementById('sos-start-button');
+    const stopButton = document.getElementById('sos-stop-button');
+    const banner = document.getElementById('sos-active-banner');
+    const activeStatus = document.getElementById('sos-active-status');
+    if (!summary || !startButton || !stopButton || !banner || !activeStatus) return;
+
+    const isActive = Boolean(activeSOSSession);
+    startButton.classList.toggle('hidden', isActive);
+    startButton.disabled = !emergencyContactNumber;
+    stopButton.classList.toggle('hidden', !isActive);
+    banner.classList.toggle('hidden', !isActive);
+    if (isActive) {
+        const expiry = new Date(activeSOSSession.expires_at);
+        const expiryLabel = Number.isNaN(expiry.getTime()) ? '' : expiry.toLocaleTimeString('es-MX');
+        summary.textContent = 'SOS activo. Tu ubicación se está compartiendo con tu contacto de emergencia.';
+        activeStatus.textContent = `Ubicación compartida hasta ${expiryLabel || 'el límite de dos horas'}.`;
+    } else {
+        summary.textContent = emergencyContactNumber
+            ? `El SMS SOS se enviará automáticamente a ${emergencyContactNumber}.`
+            : 'No hay un contacto registrado. Configúralo en tu cuenta para activar el SOS.';
+    }
+}
+
+function getCurrentDevicePosition() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error('Este navegador no permite obtener la ubicación GPS.'));
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            resolve,
+            error => {
+                const message = error.code === error.PERMISSION_DENIED
+                    ? 'Permite el acceso a tu ubicación para activar el SOS.'
+                    : 'No se pudo obtener tu ubicación GPS. Revisa la señal e inténtalo de nuevo.';
+                reject(new Error(message));
+            },
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+        );
+    });
+}
+
+async function startEmergencySOS() {
+    if (!emergencyContactNumber) {
+        showToast('Registra primero un contacto de emergencia en tu cuenta.', 'error');
+        return;
+    }
+    if (activeSOSSession) {
+        renderEmergencySOSState();
+        return;
+    }
+
+    const button = document.getElementById('sos-start-button');
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>Obteniendo ubicación…';
+    try {
+        const position = await getCurrentDevicePosition();
+        const response = await fetch('api/sos.php?action=start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.RS_USER_CSRF_TOKEN
+            },
+            body: JSON.stringify({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude
+            })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo activar el SOS');
+
+        activeSOSSession = result.data;
+        sosLastLocationSentAt = Date.now();
+        sosLocationErrorShown = false;
+        startSOSLocationWatch();
+        scheduleSOSExpiry();
+        renderEmergencySOSState();
+        document.getElementById('sos-modal').classList.add('hidden');
+        showToast('SOS activado. El SMS se envió al proveedor y tu ubicación se compartirá por 2 horas.', 'success');
+    } catch (error) {
+        showToast(error instanceof Error ? error.message : 'No se pudo activar el SOS.', 'error');
+    } finally {
+        button.innerHTML = '<i class="fa-solid fa-location-crosshairs mr-1"></i>Activar SOS y enviar SMS';
+        renderEmergencySOSState();
+    }
+}
+
+async function restoreActiveSOS() {
+    try {
+        const response = await fetch('api/sos.php?action=active', {
+            headers: { 'X-CSRF-Token': window.RS_USER_CSRF_TOKEN },
+            cache: 'no-store'
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo revisar el estado SOS');
+        if (!result.data) return;
+
+        activeSOSSession = result.data;
+        startSOSLocationWatch();
+        scheduleSOSExpiry();
+        renderEmergencySOSState();
+    } catch (error) {
+        console.error('Error al restaurar el seguimiento SOS:', error);
+    }
+}
+
+function startSOSLocationWatch() {
+    if (!activeSOSSession || !navigator.geolocation) return;
+    if (sosLocationWatchId !== null) navigator.geolocation.clearWatch(sosLocationWatchId);
+    sosLocationWatchId = navigator.geolocation.watchPosition(
+        position => sendSOSLocation(position.coords.latitude, position.coords.longitude),
+        () => {
+            if (!sosLocationErrorShown) {
+                sosLocationErrorShown = true;
+                showToast('No se pudo actualizar el GPS. Revisa el permiso de ubicación.', 'error');
+            }
+        },
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+    );
+    if (sosHeartbeatTimer !== null) window.clearInterval(sosHeartbeatTimer);
+    sosHeartbeatTimer = window.setInterval(async () => {
+        if (!activeSOSSession || sosLocationUpdateInProgress || sosHeartbeatInProgress) return;
+        sosHeartbeatInProgress = true;
+        try {
+            const position = await getCurrentDevicePosition();
+            await sendSOSLocation(position.coords.latitude, position.coords.longitude);
+        } catch (error) {
+            if (!sosLocationErrorShown) {
+                sosLocationErrorShown = true;
+                showToast(error instanceof Error ? error.message : 'No se pudo actualizar el GPS.', 'error');
+            }
+        } finally {
+            sosHeartbeatInProgress = false;
+        }
+    }, 15000);
+}
+
+async function sendSOSLocation(latitude, longitude) {
+    if (!activeSOSSession || sosLocationUpdateInProgress || Date.now() - sosLastLocationSentAt < 8000) return;
+    sosLocationUpdateInProgress = true;
+    try {
+        const response = await fetch('api/sos.php?action=update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.RS_USER_CSRF_TOKEN
+            },
+            body: JSON.stringify({ id: activeSOSSession.id, latitude, longitude })
+        });
+        const result = await response.json();
+        if (response.status === 410) {
+            expireSOSLocally();
+            return;
+        }
+        if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo actualizar la ubicación');
+        sosLastLocationSentAt = Date.now();
+        sosLocationErrorShown = false;
+    } catch (error) {
+        if (!sosLocationErrorShown) {
+            sosLocationErrorShown = true;
+            showToast(error instanceof Error ? error.message : 'No se pudo actualizar la ubicación SOS.', 'error');
+        }
+    } finally {
+        sosLocationUpdateInProgress = false;
+    }
+}
+
+async function stopEmergencySOS() {
+    if (!activeSOSSession) return;
+    const id = activeSOSSession.id;
+    stopSOSLocationWatch();
+    activeSOSSession = null;
+    renderEmergencySOSState();
+    try {
+        const response = await fetch('api/sos.php?action=stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.RS_USER_CSRF_TOKEN
+            },
+            body: JSON.stringify({ id })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo detener el SOS en el servidor');
+        showToast('SOS detenido. El enlace ya no muestra tu ubicación.', 'success');
+    } catch (error) {
+        showToast('El GPS dejó de actualizarse aquí, pero no se pudo revocar el enlace. Caducará en un máximo de 2 horas.', 'error');
+        console.error('Error al detener el seguimiento SOS:', error);
+    }
+}
+
+function stopSOSLocationWatch() {
+    if (sosLocationWatchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(sosLocationWatchId);
+    }
+    sosLocationWatchId = null;
+    if (sosHeartbeatTimer !== null) window.clearInterval(sosHeartbeatTimer);
+    sosHeartbeatTimer = null;
+    if (sosExpiryTimer !== null) window.clearTimeout(sosExpiryTimer);
+    sosExpiryTimer = null;
+}
+
+function scheduleSOSExpiry() {
+    if (sosExpiryTimer !== null) window.clearTimeout(sosExpiryTimer);
+    const expiresAt = Date.parse(activeSOSSession.expires_at);
+    if (!Number.isFinite(expiresAt)) return;
+    sosExpiryTimer = window.setTimeout(expireSOSLocally, Math.max(0, expiresAt - Date.now()));
+}
+
+function expireSOSLocally() {
+    const expiredId = activeSOSSession ? activeSOSSession.id : null;
+    stopSOSLocationWatch();
+    activeSOSSession = null;
+    renderEmergencySOSState();
+    showToast('El seguimiento SOS terminó después de 2 horas.', 'info');
+    if (expiredId) {
+        fetch('api/sos.php?action=stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.RS_USER_CSRF_TOKEN
+            },
+            body: JSON.stringify({ id: expiredId })
+        }).catch(error => console.error('No se pudo limpiar la sesión SOS vencida:', error));
+    }
 }
 
 function toggleSidebar() {

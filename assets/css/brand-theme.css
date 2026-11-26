@@ -12,12 +12,20 @@
 
 body.brand-page {
     color: var(--brand-ink);
-    background: var(--brand-cream);
+    background-color: #faf8f5;
+    background-image:
+        radial-gradient(ellipse at 18% 55%, rgba(107, 19, 36, .045), transparent 38%),
+        radial-gradient(ellipse at 82% 72%, rgba(16, 185, 129, .04), transparent 34%),
+        url("../images/interface-background.svg");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+    background-attachment: fixed;
     font-family: Inter, sans-serif;
 }
 
-body.brand-page.entry-page {
-    background: #f1efeb;
+html.dark body.brand-page {
+    background-color: #faf8f5;
 }
 
 .brand-page header.brand-header {
@@ -38,8 +46,15 @@ body.brand-page.entry-page {
     width: 58px;
     height: 58px;
     flex-shrink: 0;
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
+}
+
+.brand-page header.brand-header #account-open-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .3rem;
 }
 
 .brand-page .brand-header h1,
@@ -133,6 +148,11 @@ body.brand-page.entry-page {
     border-color: #ef4444;
     color: #b91c1c;
     background: #fef2f2;
+}
+
+.brand-page #severity-group .severity-btn:disabled:not(.is-selected) {
+    cursor: not-allowed;
+    opacity: .45;
 }
 
 .brand-page .account-login-logo {
@@ -262,7 +282,7 @@ body.brand-page.entry-page {
 
 .brand-page.brand-admin-page {
     color: var(--brand-ink);
-    background: var(--brand-cream);
+    background-color: var(--brand-cream);
 }
 
 .brand-page.brand-admin-page .admin-dashboard-layout {
@@ -302,6 +322,39 @@ body.brand-page.entry-page {
     padding: 16px 0;
     border-top: 1px solid var(--brand-line);
     border-bottom: 1px solid var(--brand-line);
+}
+
+.brand-page.brand-admin-page .admin-dashboard-report-section {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.brand-page.brand-admin-page .admin-dashboard-report-section .admin-dashboard-content-header {
+    padding-bottom: 10px;
+}
+
+.brand-page.brand-admin-page .admin-dashboard-report-list .brand-report-card {
+    flex: 0 0 auto;
+}
+
+.brand-page.brand-admin-page .admin-dashboard-map {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: 18px;
+    border: 1px solid var(--brand-line);
+    border-radius: 12px;
+    background: var(--brand-paper);
+    box-shadow: 0 1px 3px rgba(28, 24, 26, .05);
+}
+
+.brand-page.brand-admin-page .admin-dashboard-map .admin-dashboard-content-header {
+    flex: 0 0 auto;
+    margin-bottom: 14px;
 }
 
 .brand-page.brand-admin-page .admin-dashboard-shortcuts {
@@ -384,6 +437,11 @@ body.brand-page.entry-page {
         border-radius: 12px;
     }
 
+    .brand-page.brand-admin-page .admin-dashboard-report-section {
+        flex: none;
+        min-height: 0;
+    }
+
     .brand-page.brand-admin-page .admin-dashboard-content {
         flex: none;
         min-height: 60vh;
@@ -392,7 +450,14 @@ body.brand-page.entry-page {
     }
 
     .brand-page.brand-admin-page .admin-dashboard-report-list {
-        overflow: visible;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+
+    .brand-page.brand-admin-page .admin-dashboard-map {
+        flex: none;
+        min-height: 55vh;
+        padding: 14px;
     }
 }
 
@@ -477,7 +542,7 @@ body.brand-page.entry-page {
 
 html.dark body.brand-page:not(.entry-page):not(.brand-admin-page) {
     color: #e2dadd;
-    background: #15191e;
+    background-color: #faf8f5;
 }
 
 html.dark body.brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header {
@@ -642,6 +707,10 @@ html.dark .brand-page:not(.entry-page):not(.brand-admin-page) {
         gap: 8px;
     }
 
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header > div > div:first-child > div {
+        min-width: 0;
+    }
+
     .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header .brand-logo {
         width: 40px;
         height: 40px;
@@ -662,11 +731,23 @@ html.dark .brand-page:not(.entry-page):not(.brand-admin-page) {
     }
 
     .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header a[href="account.php"],
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header #robbery-alert-toggle,
     .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header button[onclick="toggleDarkMode()"] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         width: 32px;
         height: 32px;
         flex: 0 0 32px;
         padding: 0;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header #robbery-alert-label {
+        display: none;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header #robbery-alert-toggle i {
+        margin: 0;
     }
 
     .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header button[onclick="toggleSOSModal()"] {
@@ -689,6 +770,45 @@ html.dark .brand-page:not(.entry-page):not(.brand-admin-page) {
     .brand-page .sos-label-short {
         display: inline;
     }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header > div {
+        gap: 4px;
+        padding-right: 8px;
+        padding-left: 8px;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header > div > div:first-child {
+        gap: 6px;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header .brand-logo {
+        width: 36px;
+        height: 36px;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header h1.text-lg {
+        max-width: 82px;
+        overflow: hidden;
+        font-size: 12px;
+        text-overflow: ellipsis;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header > div > div:last-child {
+        gap: 4px;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header a[href="account.php"],
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header #robbery-alert-toggle,
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header button[onclick="toggleDarkMode()"] {
+        width: 30px;
+        height: 30px;
+        flex-basis: 30px;
+    }
+
+    .brand-page:not(.entry-page):not(.brand-admin-page) header.brand-header button[onclick="toggleSOSModal()"] {
+        padding-right: 7px;
+        padding-left: 7px;
+    }
 }
 
 html:not(.dark) body.brand-page.map-page {
@@ -699,7 +819,7 @@ html:not(.dark) body.brand-page.map-page {
     --map-border: #ead6ce;
     --map-ink: #35161b;
     color: var(--map-ink);
-    background: var(--map-cream);
+    background-color: var(--map-cream);
 }
 
 html:not(.dark) body.brand-page.map-page > header.brand-header {
@@ -725,6 +845,17 @@ html:not(.dark) body.brand-page.map-page > header.brand-header a[href="account.p
 
 html:not(.dark) body.brand-page.map-page > header.brand-header button[onclick="toggleDarkMode()"] {
     color: var(--map-wine);
+}
+
+#toast-container {
+    width: min(18rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+#toast-container .toast {
+    max-width: 100%;
+    overflow-wrap: anywhere;
 }
 
 html:not(.dark) body.brand-page.map-page:not(.entry-page):not(.brand-admin-page) #sidebar {

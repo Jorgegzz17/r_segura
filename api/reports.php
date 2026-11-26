@@ -11,6 +11,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/municipality.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -158,6 +159,13 @@ function listReports(): void
         );
         $mediaStmt->execute([':report_id' => (int) $report['id']]);
         $report['media'] = $mediaStmt->fetchAll();
+
+        $updatesStmt = $db->prepare(
+            'SELECT author_type, message, created_at
+             FROM report_updates WHERE report_id = :report_id ORDER BY created_at ASC'
+        );
+        $updatesStmt->execute([':report_id' => (int) $report['id']]);
+        $report['updates'] = $updatesStmt->fetchAll();
     }
     unset($report);
 
@@ -175,7 +183,8 @@ function createReport(): void
     $location = is_string($locationValue) ? trim($locationValue) : '';
     $description = is_string($descriptionValue) ? trim($descriptionValue) : '';
     $severityValue = $body['severity'] ?? 'media';
-    $severity = is_string($severityValue) ? $severityValue : '';
+    $requestedSeverity = is_string($severityValue) ? $severityValue : '';
+    $severity = $type === 'Acoso / Robo' ? 'alta' : $requestedSeverity;
     $lat = filter_var($body['latitude'] ?? null, FILTER_VALIDATE_FLOAT);
     $lng = filter_var($body['longitude'] ?? null, FILTER_VALIDATE_FLOAT);
 
@@ -196,8 +205,8 @@ function createReport(): void
     if ($lng === false || $lng < -180 || $lng > 180)      $errors[] = 'Longitud no válida';
     if (!in_array($severity, ['baja', 'media', 'alta'], true)) $errors[] = 'Severidad no válida';
 
-    if ($lat !== false && $lng !== false && distanceInMeters(25.7877647, -100.3296582, (float) $lat, (float) $lng) > 8000) {
-        $errors[] = 'La ubicación debe estar a menos de 8 km del plantel';
+    if ($lat !== false && $lng !== false && !isInsideEscobedo((float) $lat, (float) $lng)) {
+        $errors[] = 'La ubicación debe estar dentro del municipio de General Escobedo';
     }
 
     if ($errors) {
@@ -328,7 +337,8 @@ function updateReport(): void
     $location = is_string($body['location'] ?? null) ? trim($body['location']) : '';
     $description = is_string($body['description'] ?? null) ? trim($body['description']) : '';
     $type = is_string($body['type'] ?? null) ? trim($body['type']) : '';
-    $severity = is_string($body['severity'] ?? null) ? $body['severity'] : '';
+    $requestedSeverity = is_string($body['severity'] ?? null) ? $body['severity'] : '';
+    $severity = $type === 'Acoso / Robo' ? 'alta' : $requestedSeverity;
     $lat = filter_var($body['latitude'] ?? null, FILTER_VALIDATE_FLOAT);
     $lng = filter_var($body['longitude'] ?? null, FILTER_VALIDATE_FLOAT);
     $allowedTypes = ['Luz Fundida / Zona Oscura', 'Presencia Escasa de Vía', 'Zona Solitaria / Sospechosa', 'Tráfico / Banqueta Obstruida', 'Acoso / Robo', 'Otro'];
@@ -339,7 +349,7 @@ function updateReport(): void
     if ($lat === false || $lat < -90 || $lat > 90) $errors[] = 'Latitud no válida';
     if ($lng === false || $lng < -180 || $lng > 180) $errors[] = 'Longitud no válida';
     if (!in_array($severity, ['baja', 'media', 'alta'], true)) $errors[] = 'Severidad no válida';
-    if ($lat !== false && $lng !== false && distanceInMeters(25.7877647, -100.3296582, (float) $lat, (float) $lng) > 8000) $errors[] = 'La ubicación debe estar a menos de 8 km del plantel';
+    if ($lat !== false && $lng !== false && !isInsideEscobedo((float) $lat, (float) $lng)) $errors[] = 'La ubicación debe estar dentro del municipio de General Escobedo';
     if ($errors) respond(422, ['ok' => false, 'error' => implode('. ', $errors)]);
 
     $stmt = $db->prepare(
@@ -479,17 +489,6 @@ function getJsonBody(): array
     }
 
     return $data;
-}
-
-function distanceInMeters(float $lat1, float $lng1, float $lat2, float $lng2): float
-{
-    $earthRadius = 6371000;
-    $latDelta = deg2rad($lat2 - $lat1);
-    $lngDelta = deg2rad($lng2 - $lng1);
-    $a = sin($latDelta / 2) ** 2
-        + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($lngDelta / 2) ** 2;
-
-    return $earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a));
 }
 
 function textLength(string $value): int

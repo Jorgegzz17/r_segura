@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iniciar Sesión | Rutas Seguras CBTis 258</title>
+  <!-- Fuentes Google: Lora (Serif elegante) + Plus Jakarta Sans (Moderna y limpia) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;0,700;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Fondo con mapa vectorial y rutas animadas -->
+  <div class="map-background" aria-hidden="true">
+    <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+      <!-- Retícula de calles base -->
+      <path class="street-base" d="M-50 180 L420 90 L780 340 L1150 220 L1500 310" />
+      <path class="street-base" d="M120 -40 L260 450 L180 940" />
+      <path class="street-base" d="M420 90 L510 520 L390 920" />
+      <path class="street-base" d="M-30 560 L510 520 L920 680 L1480 590" />
+      <path class="street-base" d="M780 340 L920 680 L860 950" />
+      <path class="street-base" d="M210 260 L640 210" />
+      <path class="street-base" d="M290 690 L710 610" />
+
+      <!-- Rutas seguras destacadas (se dibujan solas) -->
+      <path class="safe-route-line" pathLength="1" d="M-50 180 L420 90 L510 520 L390 920" />
+      <path class="safe-route-pulse" pathLength="1" d="M-50 180 L420 90 L510 520 L390 920" />
+
+      <path class="safe-route-line" pathLength="1" d="M-30 560 L510 520 L780 340" />
+      <path class="safe-route-pulse" pathLength="1" d="M-30 560 L510 520 L780 340" />
+    </svg>
+  </div>
+
+  <!-- Barra superior -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">
+        <!-- Ícono Escudo Punto Seguro -->
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <circle cx="12" cy="10" r="2"/>
+          <path d="M9 16c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>Rutas Seguras</h1>
+        <span>CBTis 258 • General Escobedo</span>
+      </div>
+    </div>
+
+    <div class="secure-badge">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+      Acceso seguro
+    </div>
+  </header>
+
+  <!-- Contenido principal -->
+  <main>
+    <!-- Izquierda: Mensaje + Radar -->
+    <section class="hero-section">
+      <h2 class="hero-title">
+        Muévete seguro.<br>
+        <em>Regresa tranquilo.</em>
+      </h2>
+
+      <div class="hero-interactive-row">
+        <!-- Radar de puntos activos -->
+        <div class="radar-wrapper" title="18 Puntos Seguros monitoreados alrededor del plantel">
+          <div class="radar-pill">
+            <span class="live-dot"></span>
+            PUNTOS SEGUROS ACTIVOS: 18
+          </div>
+          <div class="radar-circle">
+            <div class="radar-grid"></div>
+            <div class="radar-sweep"></div>
+            <span class="safe-node node-1"></span>
+            <span class="safe-node node-2"></span>
+            <span class="safe-node node-3"></span>
+            <span class="safe-node node-4"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Derecha: Tarjeta de Inicio de Sesión -->
+    <section class="login-card">
+      <div class="card-header">
+        <h2>Iniciar sesión</h2>
+        <p>Ingresa con tu cuenta para continuar.</p>
+      </div>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="username">Correo o usuario</label>
+          <div class="input-wrapper">
+            <input type="text" id="username" placeholder="ej. paula.martinez" required autocomplete="username" />
+            <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Contraseña</label>
+          <div class="input-wrapper">
+            <input type="password" id="password" placeholder="••••••••••••" required autocomplete="current-password" />
+            <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <button type="button" class="toggle-password" id="togglePwd" aria-label="Mostrar contraseña">
+              <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+          <div class="forgot-row">
+            <a href="#" class="forgot-link">¿Olvidaste tu contraseña?</a>
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn">
+          <span>Iniciar sesión</span>
+          <svg class="arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+      </form>
+
+      <div class="register-footer">
+        ¿No tienes cuenta? <a href="#">Regístrate aquí</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    CBTis 258 • General Escobedo, Nuevo León
+  </footer>

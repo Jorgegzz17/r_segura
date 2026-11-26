@@ -10,7 +10,12 @@ require_once __DIR__ . '/config/user_auth.php';
 startUserSession();
 $userAuthenticated = isUserAuthenticated();
 $userCsrfToken = createUserCsrfToken();
-$entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
+$entryNext = ($_GET['report'] ?? '') === '1'
+    ? 'report'
+    : (($_GET['propose_route'] ?? '') === '1' ? 'route_proposal' : 'home');
+$entryLoginError = is_string($_SESSION['entry_login_error'] ?? null) ? $_SESSION['entry_login_error'] : '';
+$entryLoginUsername = is_string($_SESSION['entry_login_username'] ?? null) ? $_SESSION['entry_login_username'] : '';
+unset($_SESSION['entry_login_error'], $_SESSION['entry_login_username']);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -30,6 +35,11 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <?php if (!$userAuthenticated): ?>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;0,700;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <?php endif; ?>
 
     <script>
         tailwind.config = {
@@ -53,80 +63,114 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
     </script>
     <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>">
     <link rel="stylesheet" href="assets/css/brand-theme.css?v=<?= filemtime(__DIR__ . '/assets/css/brand-theme.css') ?>">
+    <?php if (!$userAuthenticated): ?>
+    <link rel="stylesheet" href="assets/css/login.css?v=<?= filemtime(__DIR__ . '/assets/css/login.css') ?>">
+    <?php endif; ?>
 </head>
 
 <body class="brand-page bg-slate-100 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-200 antialiased flex flex-col min-h-screen transition-colors<?= $userAuthenticated ? ' map-page' : ' entry-page' ?>">
 <?php if (!$userAuthenticated): ?>
-    <header class="entry-header brand-header bg-white/90 backdrop-blur border-b border-slate-200">
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
-            <a href="index.php" class="flex items-center gap-3" aria-label="Rutas Seguras, inicio">
-                <img src="punto_seguro.png" alt="" class="entry-mini-logo">
-                <span>
-                    <span class="block font-extrabold leading-tight text-slate-900">Rutas Seguras</span>
-                    <span class="block text-xs text-slate-500">CBTis 258 · General Escobedo</span>
-                </span>
-            </a>
-            <span class="hidden sm:inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
-                <i class="fa-solid fa-lock text-emerald-700"></i> Acceso seguro
+    <div class="map-background" aria-hidden="true">
+        <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+            <path class="street-base" d="M-50 180 420 90 780 340 1150 220 1500 310"></path>
+            <path class="street-base" d="M120-40 260 450 180 940"></path>
+            <path class="street-base" d="M420 90 510 520 390 920"></path>
+            <path class="street-base" d="M-30 560 510 520 920 680 1480 590"></path>
+            <path class="street-base" d="M780 340 920 680 860 950"></path>
+            <path class="street-base" d="M210 260 640 210"></path>
+            <path class="street-base" d="M290 690 710 610"></path>
+            <path class="safe-route-line" pathLength="1" d="M-50 180 420 90 510 520 390 920"></path>
+            <path class="safe-route-pulse" pathLength="1" d="M-50 180 420 90 510 520 390 920"></path>
+            <path class="safe-route-line" pathLength="1" d="M-30 560 510 520 780 340"></path>
+            <path class="safe-route-pulse" pathLength="1" d="M-30 560 510 520 780 340"></path>
+        </svg>
+    </div>
+
+    <header class="login-header">
+        <a href="index.php" class="login-brand" aria-label="Rutas Seguras, inicio">
+            <span class="login-brand-logo" aria-hidden="true">
+                <i class="fa-solid fa-shield-heart"></i>
             </span>
-        </div>
+            <span class="login-brand-text">
+                <strong>Rutas Seguras</strong>
+                <span>CBTis 258 · General Escobedo</span>
+            </span>
+        </a>
+        <span class="secure-badge">
+            <i class="fa-solid fa-lock" aria-hidden="true"></i> Acceso seguro
+        </span>
     </header>
 
-    <main class="w-full flex-1 flex items-center justify-center px-4 py-12 sm:py-16">
-        <div class="entry-layout w-full max-w-6xl mx-auto grid items-center gap-10 md:grid-cols-2 lg:gap-16">
-            <section class="entry-identity" aria-labelledby="entry-title">
-                <img src="punto_seguro.png" alt="Logotipo de Rutas Seguras, CBTis 258" class="entry-logo-image">
-                <p class="entry-kicker mt-7 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider">
-                    <i class="fa-solid fa-location-dot"></i> Comunidad CBTis 258
-                </p>
-                <h1 id="entry-title" class="entry-title mt-5 text-4xl sm:text-5xl font-extrabold tracking-tight">
-                    Muévete seguro.<br><em>Regresa tranquilo.</em>
-                </h1>
-                <p class="mt-5 max-w-lg text-sm sm:text-base leading-7 text-slate-600">
-                    Consulta rutas seguras, ubica puntos de apoyo y comparte alertas para cuidar a quienes recorren el camino contigo.
-                </p>
-                <div class="entry-features mt-7 grid gap-3 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
-                    <div><i class="fa-solid fa-route"></i><span>Rutas seguras</span></div>
-                    <div><i class="fa-solid fa-shield-heart"></i><span>Puntos de apoyo</span></div>
-                    <div><i class="fa-solid fa-bullhorn"></i><span>Alertas vecinales</span></div>
+    <main class="login-main">
+        <div class="login-layout">
+            <section class="hero-section" aria-labelledby="entry-title">
+                <div>
+                    <p class="hero-kicker"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Comunidad CBTis 258</p>
+                    <h1 id="entry-title" class="hero-title">Muévete seguro.<br><em>Regresa tranquilo.</em></h1>
                 </div>
-                <p class="entry-emergency mt-8 text-xs text-slate-500">
-                    <i class="fa-solid fa-phone-volume mr-1"></i> En una emergencia inmediata, llama al <strong>911</strong>.
-                </p>
+                <div class="hero-interactive-row">
+                    <div class="radar-wrapper" aria-label="Ilustración de puntos seguros">
+                        <div class="radar-pill"><span class="live-dot"></span> RED DE APOYO</div>
+                        <div class="radar-circle" aria-hidden="true">
+                            <div class="radar-grid"></div>
+                            <div class="radar-sweep"></div>
+                            <span class="safe-node node-1"></span>
+                            <span class="safe-node node-2"></span>
+                            <span class="safe-node node-3"></span>
+                            <span class="safe-node node-4"></span>
+                        </div>
+                    </div>
+                    <p class="hero-support-copy"><i class="fa-solid fa-shield-heart" aria-hidden="true"></i> Rutas y puntos de apoyo para tu comunidad.</p>
+                </div>
             </section>
 
-            <section class="entry-login-card rounded-3xl border bg-white p-6 sm:p-9" aria-labelledby="login-title">
-                <p class="entry-form-kicker text-xs font-bold uppercase tracking-[.18em]">Acceso a la comunidad</p>
-                <h2 id="login-title" class="entry-form-title mt-2 text-4xl sm:text-5xl font-extrabold">Iniciar <em>sesión</em></h2>
-                <p class="mt-3 mb-7 text-sm text-slate-500">Ingresa con tu cuenta para continuar.</p>
+            <section class="login-card" aria-labelledby="login-title">
+                <div class="card-header">
+                    <span class="login-card-icon" aria-hidden="true"><i class="fa-solid fa-user-shield"></i></span>
+                    <h2 id="login-title">Iniciar sesión</h2>
+                    <p>Ingresa con tu cuenta para continuar.</p>
+                </div>
 
-                <form action="account.php" method="post" class="space-y-5">
+                <?php if ($entryLoginError !== ''): ?>
+                    <div role="alert" class="login-error"><?= htmlspecialchars($entryLoginError, ENT_QUOTES, 'UTF-8') ?></div>
+                <?php endif; ?>
+
+                <form id="loginForm" action="account.php" method="post" class="login-form">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($userCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="action" value="login">
                     <input type="hidden" name="next" value="<?= htmlspecialchars($entryNext, ENT_QUOTES, 'UTF-8') ?>">
-                    <div>
-                        <label for="entry-username" class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-700">Correo electrónico o usuario</label>
-                        <input id="entry-username" name="username" autocomplete="username" inputmode="email" required maxlength="80"
-                            class="entry-input w-full rounded-xl border px-4 py-3 text-sm outline-none transition">
-                        <p class="mt-1 text-[11px] text-slate-400">Administradores: correo electrónico. Usuarios: nombre de usuario.</p>
+                    <div class="form-group">
+                        <label for="entry-username">Correo o usuario</label>
+                        <div class="input-wrapper">
+                            <input id="entry-username" name="username" autocomplete="username" inputmode="email" required maxlength="80"
+                                value="<?= htmlspecialchars($entryLoginUsername, ENT_QUOTES, 'UTF-8') ?>" placeholder="Tu usuario o correo">
+                            <i class="input-icon fa-regular fa-user" aria-hidden="true"></i>
+                        </div>
+                        <p class="login-help">Administradores: correo electrónico. Usuarios: nombre de usuario.</p>
                     </div>
-                    <div>
-                        <label for="entry-password" class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-700">Contraseña</label>
-                        <input id="entry-password" name="password" type="password" autocomplete="current-password" required
-                            class="entry-input w-full rounded-xl border px-4 py-3 text-sm outline-none transition">
+                    <div class="form-group">
+                        <label for="entry-password">Contraseña</label>
+                        <div class="input-wrapper">
+                            <input id="entry-password" name="password" type="password" autocomplete="current-password" required placeholder="Ingresa tu contraseña">
+                            <i class="input-icon fa-solid fa-lock" aria-hidden="true"></i>
+                            <button type="button" class="toggle-password" id="togglePwd" aria-label="Mostrar contraseña" aria-pressed="false">
+                                <i class="fa-regular fa-eye" id="eyeIcon" aria-hidden="true"></i>
+                            </button>
+                        </div>
                     </div>
-                    <button type="submit" class="entry-submit flex w-full items-center justify-center gap-3 rounded-xl px-5 py-3.5 text-sm font-bold text-white transition">
-                        Iniciar sesión <i class="fa-solid fa-arrow-right"></i>
+                    <button type="submit" class="submit-btn">
+                        <span>Iniciar sesión</span><i class="fa-solid fa-arrow-right arrow-icon" aria-hidden="true"></i>
                     </button>
                 </form>
 
-                <p class="mt-6 text-center text-sm text-slate-500">
+                <p class="register-footer">
                     ¿No tienes cuenta?
                     <a class="entry-register font-bold underline underline-offset-4" href="account.php?mode=register&amp;next=<?= htmlspecialchars($entryNext, ENT_QUOTES, 'UTF-8') ?>">Regístrate aquí</a>
                 </p>
             </section>
         </div>
     </main>
+    <footer class="login-footer">CBTis 258 · General Escobedo, Nuevo León</footer>
 <?php else: ?>
 
     <!-- ======================= HEADER ======================= -->
@@ -142,9 +186,15 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
                 </div>
 
                 <div class="flex items-center space-x-2">
+                    <button id="robbery-alert-toggle" type="button" onclick="toggleRobberyAlerts()" aria-pressed="false"
+                        class="brand-nav-link rounded-full px-3 py-2 text-xs font-bold transition"
+                        style="background-color:#ff1f1f;color:#fff;border-color:#dc2626"
+                        title="Activar alertas de nuevos reportes de robo">
+                        <i class="fa-solid fa-bell mr-1"></i><span id="robbery-alert-label">Alertas apagadas</span>
+                    </button>
                     <a id="account-open-button" href="account.php" onclick="openAccountModal(event)" aria-haspopup="dialog" aria-expanded="false" aria-controls="account-modal"
                         class="brand-nav-link rounded-full px-3 py-2 text-xs font-bold transition">
-                        <i class="fa-solid fa-user mr-1"></i><span><?= htmlspecialchars((string) $_SESSION['user_username'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <i class="fa-solid fa-user account-icon" aria-hidden="true"></i><span><?= htmlspecialchars((string) $_SESSION['user_username'], ENT_QUOTES, 'UTF-8') ?></span>
                     </a>
                     <!-- Dark mode -->
                     <button onclick="toggleDarkMode()" title="Cambiar tema"
@@ -208,7 +258,49 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
                         <span class="font-medium text-xs"><svg class="inline-block h-4 w-4 mr-2 align-middle text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v4m0 4h.01"/></svg>Reportes</span>
                         <input type="checkbox" id="layer-reports" checked onchange="toggleMapLayer('reports')" class="rounded text-amber-600 focus:ring-amber-500 h-4 w-4">
                     </label>
+                    <label class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                        <span class="font-medium text-xs"><span class="mr-2 inline-block h-1 w-4 align-middle bg-yellow-500"></span>Rutas propuestas aprobadas</span>
+                        <input type="checkbox" id="layer-route-proposals" checked onchange="toggleMapLayer('routeProposals')" class="rounded text-yellow-500 focus:ring-yellow-500 h-4 w-4">
+                    </label>
                 </div>
+                <button type="button" onclick="openRouteProposalPanel()"
+                    class="mt-3 w-full rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-yellow-100">
+                    <i class="fa-solid fa-route mr-1"></i>Proponer ruta segura
+                </button>
+                <section id="route-proposal-panel" aria-labelledby="route-proposal-title"
+                    class="mt-3 hidden rounded-xl border border-yellow-200 bg-yellow-50/70 p-3">
+                    <h4 id="route-proposal-title" class="text-sm font-bold text-slate-800">Nueva propuesta</h4>
+                    <p class="mt-1 text-[11px] leading-5 text-slate-600">
+                        Marca el inicio y los puntos del recorrido en el mapa. La ruta terminará en el plantel y solo será pública si el administrador la aprueba.
+                    </p>
+                    <form id="route-proposal-form" class="mt-3 space-y-2" onsubmit="submitRouteProposal(event)">
+                        <label for="route-proposal-name" class="block text-xs font-semibold text-slate-700">Nombre de la ruta</label>
+                        <input id="route-proposal-name" required minlength="2" maxlength="120"
+                            placeholder="Ej. Desde la parada principal"
+                            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs">
+                        <label for="route-proposal-description" class="block text-xs font-semibold text-slate-700">Descripción (opcional)</label>
+                        <textarea id="route-proposal-description" maxlength="1000" rows="2"
+                            placeholder="Calles o referencias por donde pasa"
+                            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs"></textarea>
+                        <p id="route-proposal-status" role="status" class="text-[11px] text-slate-600">Aún no has trazado la ruta.</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="route-proposal-draw-button" type="button" onclick="startRouteProposalDrawing()"
+                                class="brand-secondary-button rounded-lg px-2 py-2 text-[11px] font-bold">Marcar ruta</button>
+                            <button id="route-proposal-finish-button" type="button" onclick="finishRouteProposalDrawing()" disabled
+                                class="rounded-lg border border-yellow-400 bg-yellow-100 px-2 py-2 text-[11px] font-bold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50">
+                                Terminar en el plantel
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="route-proposal-submit-button" type="submit" disabled
+                                class="brand-primary-button rounded-lg px-2 py-2 text-[11px] font-bold disabled:cursor-not-allowed disabled:opacity-50">
+                                Enviar a revisión
+                            </button>
+                            <button type="button" onclick="cancelRouteProposal()"
+                                class="brand-secondary-button rounded-lg px-2 py-2 text-[11px] font-bold">Cancelar</button>
+                        </div>
+                    </form>
+                </section>
             </div>
 
             <!-- Reportes -->
@@ -265,6 +357,20 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
 
         <section class="flex-1 flex flex-col relative order-1 md:order-2">
             <div id="map"></div>
+            <div id="route-proposal-map-controls"
+                class="absolute left-1/2 top-3 z-[500] hidden w-max max-w-[90%] -translate-x-1/2 rounded-xl border border-yellow-300 bg-white/95 p-2 shadow-lg md:hidden">
+                <span id="route-proposal-map-status" class="mb-1 block text-[11px] text-slate-700">Toca el mapa para trazar la ruta.</span>
+                <div class="flex gap-2">
+                    <button id="route-proposal-map-finish-button" type="button" onclick="finishRouteProposalDrawing()" disabled
+                        class="rounded-lg bg-yellow-400 px-3 py-2 text-[11px] font-bold text-amber-950 disabled:opacity-50">
+                        Terminar en el plantel
+                    </button>
+                    <button type="button" onclick="cancelRouteProposal()"
+                        class="rounded-lg border border-slate-300 px-3 py-2 text-[11px] font-semibold text-slate-700">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
             <button onclick="goToCampus()" title="Volver al plantel" aria-label="Volver al plantel"
                 class="absolute bottom-4 right-4 z-[500] w-11 h-11 bg-white dark:bg-slate-800 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-200 hover:text-cbtis-wine transition">
                 <i class="fa-solid fa-location-crosshairs text-lg"></i>
@@ -306,6 +412,9 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
                         <button type="button" data-severity="media" aria-pressed="true" onclick="setSeverity('media')" class="severity-btn is-selected py-2 rounded-xl text-xs font-bold border-2 transition">Media</button>
                         <button type="button" data-severity="alta" aria-pressed="false" onclick="setSeverity('alta')" class="severity-btn py-2 rounded-xl text-xs font-bold border-2 transition">Alta</button>
                     </div>
+                    <p id="robbery-severity-note" class="mt-2 hidden text-xs font-semibold text-red-700">
+                        El riesgo para Acoso o Robo se establece automáticamente en Alto.
+                    </p>
                 </div>
 
                 <div>
@@ -354,7 +463,7 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
     <!-- ======================= MODAL: CUENTA ======================= -->
     <div id="account-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] hidden flex items-center justify-center p-4"
         onclick="closeAccountModalFromBackdrop(event)">
-        <section class="brand-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8" role="dialog" aria-modal="true"
+        <section class="brand-panel w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 sm:p-8" role="dialog" aria-modal="true"
             aria-labelledby="account-modal-title" aria-describedby="account-modal-description" tabindex="-1">
             <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div>
@@ -384,6 +493,25 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
                 <i class="fa-solid fa-plus"></i>Crear un reporte
             </button>
 
+            <section class="brand-panel mt-6 p-4 sm:p-5" aria-labelledby="emergency-contact-title">
+                <h3 id="emergency-contact-title" class="brand-heading text-base font-extrabold">Contacto de emergencia</h3>
+                <p class="mt-1 text-xs text-slate-500">Al activar el SOS se enviará un SMS automático con un enlace privado a tu ubicación en vivo.</p>
+                <form id="emergency-contact-form" onsubmit="saveEmergencyContact(event)" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <label for="emergency-contact-phone" class="min-w-0 flex-1 text-xs font-semibold text-slate-600">
+                        Número de teléfono
+                        <input id="emergency-contact-phone" type="tel" inputmode="tel" autocomplete="tel"
+                            maxlength="16" pattern="(\+[1-9][0-9]{7,14})?" placeholder="+528112345678"
+                            class="brand-input mt-1 w-full rounded-lg border px-3 py-2.5 text-sm">
+                    </label>
+                    <button id="emergency-contact-save" type="submit"
+                        class="brand-primary-button rounded-lg px-4 py-2.5 text-xs font-bold">
+                        Guardar contacto
+                    </button>
+                </form>
+                <p class="mt-2 text-[11px] text-slate-500">Formato internacional con prefijo (México: +52 y 10 dígitos). Deja el campo vacío para quitarlo.</p>
+                <p id="emergency-contact-status" class="mt-2 text-xs font-semibold" role="status" aria-live="polite">Cargando contacto…</p>
+            </section>
+
             <div id="account-notifications" class="mt-5 hidden"></div>
 
             <h3 class="brand-heading mt-8 mb-3 text-lg font-extrabold">Mi historial</h3>
@@ -412,12 +540,13 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
     </div>
 
     <!-- ======================= MODAL: SOS ======================= -->
-    <div id="sos-modal" class="fixed inset-0 bg-red-950/80 backdrop-blur-md z-[1000] hidden flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-2xl p-6 text-center border-2 border-red-500 animate-fade-in-up">
+    <div id="sos-modal" class="fixed inset-0 bg-red-950/80 backdrop-blur-md z-[1000] hidden flex items-center justify-center p-4"
+        role="dialog" aria-modal="true" aria-labelledby="sos-modal-title">
+        <div class="bg-white dark:bg-slate-900 w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-3xl shadow-2xl p-6 text-center border-2 border-red-500 animate-fade-in-up">
             <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl border border-red-200">
                 <i class="fa-solid fa-phone-flip animate-bounce"></i>
             </div>
-            <h3 class="text-xl font-black text-slate-900 dark:text-white mb-1">Centro de Emergencias</h3>
+            <h3 id="sos-modal-title" class="text-xl font-black text-slate-900 dark:text-white mb-1">Centro de Emergencias</h3>
             <p class="text-xs text-slate-500 dark:text-slate-400 mb-6">Líneas de respuesta inmediata para General Escobedo:</p>
 
             <div class="space-y-3">
@@ -433,19 +562,54 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
                     <span class="flex items-center space-x-2"><i class="fa-solid fa-school"></i><span>Dirección CBTis 258</span></span>
                     <span class="text-xs text-slate-500">Plantel</span>
                 </a>
+                <a href="https://wa.me/?text=Estoy%20en%20una%20situaci%C3%B3n%20de%20emergencia.%20Necesito%20ayuda."
+                    target="_blank" rel="noopener noreferrer"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-between shadow-md transition">
+                    <span class="flex items-center space-x-2"><i class="fa-brands fa-whatsapp"></i><span>Avisar a mi familia por WhatsApp</span></span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                </a>
+                <p class="text-[10px] text-slate-500 dark:text-slate-400">WhatsApp te permitirá elegir el familiar al que deseas enviar el mensaje.</p>
+                <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-left dark:border-red-900 dark:bg-red-950/30">
+                    <p id="sos-contact-summary" class="text-xs font-semibold text-slate-700 dark:text-slate-200">Cargando contacto de emergencia…</p>
+                    <button id="sos-start-button" type="button" onclick="startEmergencySOS()" disabled
+                        class="mt-3 w-full rounded-lg bg-red-700 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50">
+                        <i class="fa-solid fa-location-crosshairs mr-1"></i>Activar SOS y enviar SMS
+                    </button>
+                    <button id="sos-stop-button" type="button" onclick="stopEmergencySOS()" class="mt-3 hidden w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700">
+                        Detener ubicación compartida
+                    </button>
+                    <button type="button" onclick="openEmergencyContactSettings()" class="mt-3 w-full text-xs font-bold text-red-800 underline underline-offset-2 dark:text-red-200">
+                        Configurar contacto de emergencia
+                    </button>
+                    <p class="mt-2 text-[10px] text-slate-500 dark:text-slate-400">Al activar, autorizas compartir tu GPS con ese contacto por un máximo de 2 horas. Se requiere permiso de ubicación y conexión a Internet.</p>
+                </div>
             </div>
 
             <button onclick="toggleSOSModal()" class="mt-6 text-xs text-slate-400 font-semibold hover:text-slate-600">Cerrar ventana</button>
         </div>
     </div>
 
+    <div id="sos-active-banner" class="fixed inset-x-3 bottom-3 z-[1300] hidden rounded-xl border border-red-300 bg-white p-3 shadow-xl sm:inset-x-auto sm:right-4 sm:w-96"
+        role="status" aria-live="assertive">
+        <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <p class="text-sm font-extrabold text-red-800"><i class="fa-solid fa-location-dot mr-1"></i>SOS activo</p>
+                <p id="sos-active-status" class="mt-1 text-xs text-slate-600">Compartiendo ubicación…</p>
+            </div>
+            <button type="button" onclick="stopEmergencySOS()" class="shrink-0 rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white">
+                Detener
+            </button>
+        </div>
+    </div>
+
     <!-- Toasts -->
-    <div id="toast-container" class="fixed bottom-4 right-4 z-[1200] space-y-2 w-72"></div>
+    <div id="toast-container" class="fixed bottom-4 right-4 z-[1200] space-y-2 w-72" role="status" aria-live="polite" aria-atomic="false"></div>
 
     <script>
         window.RS_USER_AUTHENTICATED = <?= $userAuthenticated ? 'true' : 'false' ?>;
         window.RS_USER_CSRF_TOKEN = <?= json_encode($userCsrfToken, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     </script>
+    <script src="assets/js/municipality.js?v=<?= filemtime(__DIR__ . '/assets/js/municipality.js') ?>"></script>
     <script src="assets/js/route-routing.js?v=<?= filemtime(__DIR__ . '/assets/js/route-routing.js') ?>"></script>
     <script src="assets/js/app.js?v=<?= filemtime(__DIR__ . '/assets/js/app.js') ?>"></script>
     <?php if (($_GET['account'] ?? '') === '1' && $userAuthenticated): ?>
@@ -456,6 +620,24 @@ $entryNext = ($_GET['report'] ?? '') === '1' ? 'report' : 'home';
         history.replaceState(null, '', accountUrl.pathname + accountUrl.search + accountUrl.hash);
     </script>
     <?php endif; ?>
+<?php endif; ?>
+<?php if (!$userAuthenticated): ?>
+    <script>
+        (() => {
+            const toggle = document.getElementById('togglePwd');
+            const password = document.getElementById('entry-password');
+            const icon = document.getElementById('eyeIcon');
+            if (!toggle || !password || !icon) return;
+
+            toggle.addEventListener('click', () => {
+                const isVisible = password.type === 'password';
+                password.type = isVisible ? 'text' : 'password';
+                toggle.setAttribute('aria-label', isVisible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+                toggle.setAttribute('aria-pressed', String(isVisible));
+                icon.className = isVisible ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+            });
+        })();
+    </script>
 <?php endif; ?>
 </body>
 </html>

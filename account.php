@@ -14,8 +14,10 @@ function accountEscape(string $value): string
 $error = '';
 $mode = ($_GET['mode'] ?? '') === 'register' ? 'register' : 'login';
 $nextInput = $_POST['next'] ?? $_GET['next'] ?? '';
-$next = in_array($nextInput, ['report', 'home'], true) ? $nextInput : '';
-$successUrl = $next === 'report' ? 'index.php?report=1' : ($next === 'home' ? 'index.php' : 'account.php');
+$next = in_array($nextInput, ['report', 'route_proposal', 'home'], true) ? $nextInput : '';
+$successUrl = $next === 'report'
+    ? 'index.php?report=1'
+    : ($next === 'route_proposal' ? 'index.php?propose_route=1' : ($next === 'home' ? 'index.php' : 'account.php'));
 $csrf = createUserCsrfToken();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -90,6 +92,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (($_SESSION['user_login_blocked_until'] ?? 0) > time()) {
             $error = 'Demasiados intentos. Espera unos minutos antes de volver a intentarlo.';
         } else {
+            require_once __DIR__ . '/config/admin_auth.php';
+            ensureDefaultAdminAccount();
+
             $adminStmt = getDB()->prepare(
                 'SELECT id, username, password_hash FROM admin_users WHERE username = :username LIMIT 1'
             );
@@ -144,6 +149,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $authenticated = isUserAuthenticated();
 $entryRegistration = !$authenticated && $mode === 'register';
 $accountPopupRequest = ($_GET['modal_data'] ?? '') === '1';
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && !$authenticated
+    && ($_POST['action'] ?? '') === 'login'
+    && $error !== ''
+) {
+    $attemptedUsername = $_POST['username'] ?? '';
+    $_SESSION['entry_login_error'] = $error;
+    $_SESSION['entry_login_username'] = is_string($attemptedUsername) ? substr(trim($attemptedUsername), 0, 80) : '';
+    header('Location: ' . ($next === 'report' ? 'index.php?report=1' : ($next === 'route_proposal' ? 'index.php?propose_route=1' : 'index.php')));
+    exit;
+}
+if (!$authenticated && $_SERVER['REQUEST_METHOD'] === 'GET' && !$entryRegistration && !$accountPopupRequest) {
+    header('Location: ' . ($next === 'report' ? 'index.php?report=1' : ($next === 'route_proposal' ? 'index.php?propose_route=1' : 'index.php')));
+    exit;
+}
 if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'GET' && !$accountPopupRequest) {
     header('Location: index.php?account=1');
     exit;
@@ -208,26 +229,44 @@ if (($_GET['modal_data'] ?? '') === '1' && $_SERVER['REQUEST_METHOD'] === 'GET')
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <?php if ($entryRegistration): ?>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;0,700;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>">
     <?php endif; ?>
     <link rel="stylesheet" href="assets/css/brand-theme.css?v=<?= filemtime(__DIR__ . '/assets/css/brand-theme.css') ?>">
+    <?php if ($entryRegistration): ?>
+    <link rel="stylesheet" href="assets/css/login.css?v=<?= filemtime(__DIR__ . '/assets/css/login.css') ?>">
+    <?php endif; ?>
     <style>body{font-family:Inter,sans-serif}</style>
 </head>
 <body class="brand-page min-h-screen bg-slate-100 text-slate-800 flex flex-col<?= $entryRegistration ? ' entry-page' : '' ?>">
     <?php if ($entryRegistration): ?>
-    <header class="entry-header brand-header bg-white/90 backdrop-blur border-b border-slate-200">
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
-            <a href="index.php" class="flex items-center gap-3" aria-label="Rutas Seguras, inicio">
-                <img src="punto_seguro.png" alt="" class="entry-mini-logo">
-                <span>
-                    <span class="block font-extrabold leading-tight text-slate-900">Rutas Seguras</span>
-                    <span class="block text-xs text-slate-500">CBTis 258 · General Escobedo</span>
-                </span>
-            </a>
-            <span class="hidden sm:inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
-                <i class="fa-solid fa-lock text-emerald-700"></i> Acceso seguro
+    <div class="map-background" aria-hidden="true">
+        <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+            <path class="street-base" d="M-50 180 420 90 780 340 1150 220 1500 310"></path>
+            <path class="street-base" d="M120-40 260 450 180 940"></path>
+            <path class="street-base" d="M420 90 510 520 390 920"></path>
+            <path class="street-base" d="M-30 560 510 520 920 680 1480 590"></path>
+            <path class="street-base" d="M780 340 920 680 860 950"></path>
+            <path class="street-base" d="M210 260 640 210"></path>
+            <path class="street-base" d="M290 690 710 610"></path>
+            <path class="safe-route-line" pathLength="1" d="M-50 180 420 90 510 520 390 920"></path>
+            <path class="safe-route-pulse" pathLength="1" d="M-50 180 420 90 510 520 390 920"></path>
+            <path class="safe-route-line" pathLength="1" d="M-30 560 510 520 780 340"></path>
+            <path class="safe-route-pulse" pathLength="1" d="M-30 560 510 520 780 340"></path>
+        </svg>
+    </div>
+
+    <header class="login-header">
+        <a href="index.php" class="login-brand" aria-label="Rutas Seguras, inicio">
+            <span class="login-brand-logo" aria-hidden="true"><i class="fa-solid fa-shield-heart"></i></span>
+            <span class="login-brand-text">
+                <strong>Rutas Seguras</strong>
+                <span>CBTis 258 · General Escobedo</span>
             </span>
-        </div>
+        </a>
+        <span class="secure-badge"><i class="fa-solid fa-lock" aria-hidden="true"></i> Acceso seguro</span>
     </header>
     <?php else: ?>
     <header class="brand-header bg-white border-b border-slate-200">
@@ -240,74 +279,95 @@ if (($_GET['modal_data'] ?? '') === '1' && $_SERVER['REQUEST_METHOD'] === 'GET')
     </header>
     <?php endif; ?>
 
-    <main class="<?= $entryRegistration ? 'w-full flex-1 flex items-center justify-center px-4 py-12 sm:py-16' : 'w-full max-w-2xl mx-auto px-4 py-8 flex-1' ?>">
+    <main class="<?= $entryRegistration ? 'login-main' : ($authenticated ? 'w-full max-w-4xl mx-auto px-4 py-8 flex-1' : 'w-full max-w-2xl mx-auto px-4 py-8 flex-1') ?>">
         <?php if ($entryRegistration): ?>
-            <div class="entry-layout w-full max-w-6xl mx-auto grid items-center gap-10 md:grid-cols-2 lg:gap-16">
-                <section class="entry-identity" aria-labelledby="entry-title">
-                    <img src="punto_seguro.png" alt="Logotipo de Rutas Seguras, CBTis 258" class="entry-logo-image">
-                    <p class="entry-kicker mt-7 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider">
-                        <i class="fa-solid fa-location-dot"></i> Comunidad CBTis 258
-                    </p>
-                    <h1 id="entry-title" class="entry-title mt-5 text-4xl sm:text-5xl font-extrabold tracking-tight">
-                        Muévete seguro.<br><em>Regresa tranquilo.</em>
-                    </h1>
-                    <p class="mt-5 max-w-lg text-sm sm:text-base leading-7 text-slate-600">
-                        Consulta rutas seguras, ubica puntos de apoyo y comparte alertas para cuidar a quienes recorren el camino contigo.
-                    </p>
-                    <div class="entry-features mt-7 grid gap-3 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
-                        <div><i class="fa-solid fa-route"></i><span>Rutas seguras</span></div>
-                        <div><i class="fa-solid fa-shield-heart"></i><span>Puntos de apoyo</span></div>
-                        <div><i class="fa-solid fa-bullhorn"></i><span>Alertas vecinales</span></div>
+            <div class="login-layout">
+                <section class="hero-section" aria-labelledby="entry-title">
+                    <div>
+                        <p class="hero-kicker"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Comunidad CBTis 258</p>
+                        <h1 id="entry-title" class="hero-title">Muévete seguro.<br><em>Regresa tranquilo.</em></h1>
                     </div>
-                    <p class="entry-emergency mt-8 text-xs text-slate-500">
-                        <i class="fa-solid fa-phone-volume mr-1"></i> En una emergencia inmediata, llama al <strong>911</strong>.
-                    </p>
+                    <div class="hero-interactive-row">
+                        <div class="radar-wrapper" aria-label="Ilustración de puntos seguros">
+                            <div class="radar-pill"><span class="live-dot"></span> RED DE APOYO</div>
+                            <div class="radar-circle" aria-hidden="true">
+                                <div class="radar-grid"></div>
+                                <div class="radar-sweep"></div>
+                                <span class="safe-node node-1"></span>
+                                <span class="safe-node node-2"></span>
+                                <span class="safe-node node-3"></span>
+                                <span class="safe-node node-4"></span>
+                            </div>
+                        </div>
+                        <p class="hero-support-copy"><i class="fa-solid fa-shield-heart" aria-hidden="true"></i> Rutas y puntos de apoyo para tu comunidad.</p>
+                    </div>
                 </section>
 
-                <section class="entry-login-card rounded-3xl border bg-white p-6 sm:p-9" aria-labelledby="register-title">
-                    <p class="entry-form-kicker text-xs font-bold uppercase tracking-[.18em]">Únete a la comunidad</p>
-                    <h2 id="register-title" class="entry-form-title mt-2 text-4xl sm:text-5xl font-extrabold">Crear <em>cuenta</em></h2>
-                    <p class="mt-3 mb-7 text-sm text-slate-500">Completa tus datos para publicar reportes y consultar su estado.</p>
+                <section class="login-card" aria-labelledby="register-title">
+                    <div class="card-header">
+                        <span class="login-card-icon" aria-hidden="true"><i class="fa-solid fa-user-plus"></i></span>
+                        <h2 id="register-title">Crear cuenta</h2>
+                        <p>Completa tus datos para publicar reportes y consultar su estado.</p>
+                    </div>
 
                     <?php if ($next === 'report'): ?>
                         <div class="brand-notice mb-5 rounded-xl px-4 py-3 text-sm">
                             Para publicar un reporte, primero crea tu cuenta o inicia sesión.
                         </div>
+                    <?php elseif ($next === 'route_proposal'): ?>
+                        <div class="brand-notice mb-5 rounded-xl px-4 py-3 text-sm">
+                            Para proponer una ruta segura, primero crea tu cuenta o inicia sesión.
+                        </div>
                     <?php endif; ?>
                     <?php if ($error !== ''): ?>
-                        <div role="alert" class="entry-error mb-5 rounded-xl border px-4 py-3 text-sm"><?= accountEscape($error) ?></div>
+                        <div role="alert" class="login-error"><?= accountEscape($error) ?></div>
                     <?php endif; ?>
 
-                    <form method="post" class="space-y-4">
+                    <form method="post" class="login-form">
                         <input type="hidden" name="csrf_token" value="<?= accountEscape($csrf) ?>">
                         <input type="hidden" name="action" value="register">
                         <input type="hidden" name="next" value="<?= accountEscape($next) ?>">
-                        <div>
-                            <label for="username" class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-700">Nombre de usuario</label>
-                            <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="80"
+                        <div class="form-group">
+                            <label for="username">Nombre de usuario</label>
+                            <div class="input-wrapper">
+                                <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="80"
                                 pattern="[a-zA-Z0-9._-]{3,80}" value="<?= accountEscape((string) ($_POST['username'] ?? '')) ?>"
-                                class="entry-input w-full rounded-xl border px-4 py-3 text-sm outline-none transition">
-                            <p class="mt-1 text-[11px] text-slate-400">3 a 80 caracteres: letras, números, punto, guion o guion bajo.</p>
+                                    placeholder="Elige un nombre de usuario">
+                                <i class="input-icon fa-regular fa-user" aria-hidden="true"></i>
+                            </div>
+                            <p class="login-help">3 a 80 caracteres: letras, números, punto, guion o guion bajo.</p>
                         </div>
-                        <div>
-                            <label for="password" class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-700">Contraseña</label>
-                            <input id="password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="72"
-                                class="entry-input w-full rounded-xl border px-4 py-3 text-sm outline-none transition">
-                            <p class="mt-1 text-[11px] text-slate-400">Usa entre 12 y 72 caracteres.</p>
+                        <div class="form-group">
+                            <label for="password">Contraseña</label>
+                            <div class="input-wrapper">
+                                <input id="password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="72"
+                                    placeholder="Crea una contraseña">
+                                <i class="input-icon fa-solid fa-lock" aria-hidden="true"></i>
+                                <button type="button" class="toggle-password" data-password-toggle="password" aria-label="Mostrar contraseña" aria-pressed="false">
+                                    <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            <p class="login-help">Usa entre 12 y 72 caracteres.</p>
                         </div>
-                        <div>
-                            <label for="password_confirmation" class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-700">Confirmar contraseña</label>
-                            <input id="password_confirmation" name="password_confirmation" type="password" autocomplete="new-password" required minlength="12" maxlength="72"
-                                class="entry-input w-full rounded-xl border px-4 py-3 text-sm outline-none transition">
+                        <div class="form-group">
+                            <label for="password_confirmation">Confirmar contraseña</label>
+                            <div class="input-wrapper">
+                                <input id="password_confirmation" name="password_confirmation" type="password" autocomplete="new-password" required minlength="12" maxlength="72"
+                                    placeholder="Vuelve a escribir tu contraseña">
+                                <i class="input-icon fa-solid fa-lock" aria-hidden="true"></i>
+                                <button type="button" class="toggle-password" data-password-toggle="password_confirmation" aria-label="Mostrar contraseña" aria-pressed="false">
+                                    <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                </button>
+                            </div>
                         </div>
-                        <button type="submit" class="entry-submit flex w-full items-center justify-center gap-3 rounded-xl px-5 py-3.5 text-sm font-bold text-white transition">
-                            Crear cuenta <i class="fa-solid fa-arrow-right"></i>
+                        <button type="submit" class="submit-btn">
+                            <span>Crear cuenta</span><i class="fa-solid fa-arrow-right arrow-icon" aria-hidden="true"></i>
                         </button>
                     </form>
 
-                    <p class="mt-6 text-center text-sm text-slate-500">
+                    <p class="register-footer">
                         ¿Ya tienes cuenta?
-                        <a class="entry-register font-bold underline underline-offset-4" href="index.php<?= $next === 'report' ? '?report=1' : '' ?>">Inicia sesión</a>
+                        <a href="index.php<?= $next === 'report' ? '?report=1' : ($next === 'route_proposal' ? '?propose_route=1' : '') ?>">Inicia sesión</a>
                     </p>
                 </section>
             </div>
@@ -354,6 +414,34 @@ if (($_GET['modal_data'] ?? '') === '1' && $_SERVER['REQUEST_METHOD'] === 'GET')
                                     </span>
                                 </div>
                                 <p class="text-sm text-slate-500 mt-2"><?= accountEscape($report['description']) ?></p>
+                                <?php if (!empty($report['media'])): ?>
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        <?php foreach ($report['media'] as $photo): ?>
+                                            <?php $photoPath = ltrim((string) $photo['file_path'], '/'); ?>
+                                            <button type="button"
+                                                class="account-report-photo block h-24 w-24 overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                                                data-photo="<?= accountEscape($photoPath) ?>" data-name="<?= accountEscape($photo['file_name']) ?>"
+                                                title="Ampliar fotografía: <?= accountEscape($photo['file_name']) ?>">
+                                                <img src="<?= accountEscape($photoPath) ?>" alt="<?= accountEscape($photo['file_name']) ?>"
+                                                    class="h-full w-full object-cover" loading="lazy">
+                                            </button>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if (!empty($report['updates'])): ?>
+                                    <div class="mt-3 space-y-2">
+                                        <p class="text-xs font-bold text-slate-600">Seguimiento del administrador</p>
+                                        <?php foreach ($report['updates'] as $update): ?>
+                                            <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                                <p class="text-[11px] text-slate-400">
+                                                    <?= accountEscape($update['author_type'] === 'admin' ? 'Administrador' : 'Usuario') ?>
+                                                    · <?= accountEscape($update['created_at']) ?>
+                                                </p>
+                                                <p class="mt-1 whitespace-pre-line text-xs text-slate-700"><?= accountEscape($update['message']) ?></p>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
                                 <p class="text-xs text-slate-400 mt-3">Riesgo <?= accountEscape(ucfirst($report['severity'])) ?> · <?= accountEscape($report['created_at']) ?></p>
                             </article>
                         <?php endforeach; ?>
@@ -375,6 +463,10 @@ if (($_GET['modal_data'] ?? '') === '1' && $_SERVER['REQUEST_METHOD'] === 'GET')
                 <?php if ($next === 'report'): ?>
                     <div class="brand-notice mb-5 rounded-xl px-4 py-3 text-sm">
                         Para publicar un reporte, primero inicia sesión o crea una cuenta.
+                    </div>
+                <?php elseif ($next === 'route_proposal'): ?>
+                    <div class="brand-notice mb-5 rounded-xl px-4 py-3 text-sm">
+                        Para proponer una ruta segura, primero inicia sesión o crea una cuenta.
                     </div>
                 <?php endif; ?>
                 <?php if ($error !== ''): ?>
@@ -427,5 +519,65 @@ if (($_GET['modal_data'] ?? '') === '1' && $_SERVER['REQUEST_METHOD'] === 'GET')
         <?php endif; ?>
         <?php endif; ?>
     </main>
+    <?php if ($entryRegistration): ?>
+    <footer class="login-footer">CBTis 258 · General Escobedo, Nuevo León</footer>
+    <?php endif; ?>
+    <div id="account-photo-modal" class="fixed inset-0 z-[1200] hidden items-center justify-center bg-slate-950/90 p-4"
+        role="dialog" aria-modal="true" aria-label="Fotografía del reporte"
+        onclick="if (event.target === this) closeAccountPhoto()">
+        <button type="button" onclick="closeAccountPhoto()" aria-label="Cerrar fotografía"
+            class="absolute right-4 top-4 rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-900 shadow-lg">
+            <i class="fa-solid fa-xmark mr-1"></i>Cerrar
+        </button>
+        <img id="account-photo-modal-image" src="" alt="Fotografía del reporte"
+            class="max-h-[86vh] max-w-[90vw] rounded-xl object-contain shadow-2xl">
+    </div>
+    <script>
+        const accountPhotoModal = document.getElementById('account-photo-modal');
+        const accountPhotoImage = document.getElementById('account-photo-modal-image');
+
+        function openAccountPhoto(path, name) {
+            accountPhotoImage.src = path;
+            accountPhotoImage.alt = name || 'Fotografía del reporte';
+            accountPhotoModal.classList.remove('hidden');
+            accountPhotoModal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            accountPhotoModal.querySelector('button').focus();
+        }
+
+        function closeAccountPhoto() {
+            accountPhotoModal.classList.add('hidden');
+            accountPhotoModal.classList.remove('flex');
+            accountPhotoImage.removeAttribute('src');
+            document.body.style.overflow = '';
+        }
+
+        document.querySelectorAll('.account-report-photo').forEach((button) => {
+            button.addEventListener('click', () => openAccountPhoto(button.dataset.photo, button.dataset.name));
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !accountPhotoModal.classList.contains('hidden')) {
+                closeAccountPhoto();
+            }
+        });
+    </script>
+    <?php if ($entryRegistration): ?>
+    <script>
+        document.querySelectorAll('[data-password-toggle]').forEach((toggle) => {
+            const password = document.getElementById(toggle.dataset.passwordToggle);
+            const icon = toggle.querySelector('i');
+            if (!password || !icon) return;
+
+            toggle.addEventListener('click', () => {
+                const isVisible = password.type === 'password';
+                password.type = isVisible ? 'text' : 'password';
+                toggle.setAttribute('aria-label', isVisible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+                toggle.setAttribute('aria-pressed', String(isVisible));
+                icon.className = isVisible ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+            });
+        });
+    </script>
+    <?php endif; ?>
 </body>
 </html>

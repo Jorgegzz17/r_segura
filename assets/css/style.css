@@ -53,7 +53,7 @@ body > main {
 }
 
 #sidebar {
-    width: 22rem;
+    width: 30rem;
     height: auto;
     overflow: visible;
     border: 1px solid var(--line);
@@ -394,6 +394,47 @@ body > main > section {
 @media (min-width: 768px) {
     #sidebar-handle { display: none; }
     body > main > section { align-self: flex-start; }
+
+    body.map-page {
+        height: 100vh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    body.map-page > main {
+        flex: 1 1 auto;
+        height: calc(100vh - 64px);
+        min-height: 0;
+        max-width: none;
+        overflow: hidden;
+    }
+
+    body.map-page #sidebar {
+        flex: 0 0 26rem;
+        height: 100%;
+        max-height: 100%;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    body.map-page > main > section {
+        align-self: stretch;
+        height: 100%;
+        min-height: 0;
+    }
+
+    body.map-page #map {
+        height: 100%;
+        min-height: 0;
+    }
+}
+
+@media (min-width: 1200px) {
+    body.map-page #sidebar {
+        flex-basis: 30rem;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

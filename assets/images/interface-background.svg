@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+  <g fill="none" stroke="#ece6df" stroke-width="2.5">
+    <path d="M-50 180 420 90 780 340 1150 220 1500 310"/>
+    <path d="M120-40 260 450 180 940"/>
+    <path d="M420 90 510 520 390 920"/>
+    <path d="M-30 560 510 520 920 680 1480 590"/>
+    <path d="M780 340 920 680 860 950"/>
+    <path d="M210 260 640 210"/>
+    <path d="M290 690 710 610"/>
+  </g>
+  <g fill="none" stroke="#6b1324" stroke-linecap="round" stroke-width="3" opacity=".38">
+    <path d="M-50 180 420 90 510 520 390 920"/>
+    <path d="M-30 560 510 520 780 340"/>
+  </g>
+</svg>
